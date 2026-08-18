@@ -14,6 +14,45 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("PiWebApp tab title", () => {
+  it("counts unread sessions into the browser tab title", () => {
+    // The badge and the row highlight need the page on screen; a switched-away
+    // tab shows nothing but this string.
+    const documentStub = { baseURI: "https://pi.example.test/", visibilityState: "visible", hasFocus: () => true, title: "PI WEB" };
+    vi.stubGlobal("document", documentStub);
+    const app = createApp();
+    enableUnread(app);
+    const first = session("first");
+    const second = session("second");
+    setAppState(app, { ...initialAppState(), sessions: [first, second], mainView: "chat" });
+
+    handleRealtimeEvent(app, unreadEvent(1, unreadSummary(first, 1), first));
+    invokeWillUpdate(app);
+    expect(documentStub.title).toBe("(1) PI WEB");
+
+    handleRealtimeEvent(app, unreadEvent(2, unreadSummary(second, 2), second));
+    invokeWillUpdate(app);
+    expect(documentStub.title).toBe("(2) PI WEB");
+  });
+
+  it("restores the plain title once everything is read", () => {
+    const documentStub = { baseURI: "https://pi.example.test/", visibilityState: "visible", hasFocus: () => true, title: "PI WEB" };
+    vi.stubGlobal("document", documentStub);
+    const app = createApp();
+    enableUnread(app);
+    const only = session("only");
+    setAppState(app, { ...initialAppState(), sessions: [only], mainView: "chat" });
+
+    handleRealtimeEvent(app, unreadEvent(1, unreadSummary(only, 1), only));
+    invokeWillUpdate(app);
+    expect(documentStub.title).toBe("(1) PI WEB");
+
+    handleRealtimeEvent(app, unreadEvent(2, null, only));
+    invokeWillUpdate(app);
+    expect(documentStub.title).toBe("PI WEB");
+  });
+});
+
 describe("PiWebApp session unread wiring", () => {
   it("shows a server completion for a background chat and acknowledges the exact observed order when viewed", async () => {
     const fetchMock = stubJsonFetch({ catalogId: "catalog-a", catalogRevision: 2, sessions: [] });
@@ -319,6 +358,12 @@ function setMobileNavigationLayout(app: PiWebApp, mobile: boolean): void {
 function invokeUpdated(app: PiWebApp): void {
   const method: unknown = Reflect.get(app, "updated");
   if (!isUpdatedHook(method)) throw new Error("PiWebApp.updated is not callable");
+  method.call(app);
+}
+
+function invokeWillUpdate(app: PiWebApp): void {
+  const method: unknown = Reflect.get(app, "willUpdate");
+  if (!isUpdatedHook(method)) throw new Error("PiWebApp.willUpdate is not callable");
   method.call(app);
 }
 

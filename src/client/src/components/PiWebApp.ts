@@ -51,6 +51,7 @@ import "./MachineList";
 import "./ProjectList";
 import "./WorkspaceList";
 import { unreadSessionCount } from "./SessionList";
+import { applyDocumentTitle, documentTitleWithUnread } from "../documentTitle";
 import "./SessionCleanupDialog";
 import "./SessionTreeNavigator";
 import "./ChatView";
@@ -264,6 +265,18 @@ export class PiWebApp extends LitElement {
   protected override willUpdate(): void {
     this.toggleAttribute("pwa-display-mode", this.appShell.isPwaDisplayMode);
     this.syncSessionWarningVisibility();
+    this.syncDocumentTitle();
+  }
+
+  /**
+   * Mirror the unread count into the tab title.
+   *
+   * Counts the same sessions the sidebar badges do, which means the selected
+   * machine's: the browser only holds an unread projection for the machine it
+   * is streaming, so a wider number would be a guess.
+   */
+  private syncDocumentTitle(): void {
+    applyDocumentTitle(documentTitleWithUnread(unreadSessionCount(this.state.sessions, this.unreadSessionIds)));
   }
 
   protected override updated(): void {
