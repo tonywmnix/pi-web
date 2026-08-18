@@ -649,6 +649,17 @@ function sessionRows(sessions: SessionInfo[]): SessionRow[] {
     childrenByPath.set(parentKey, children);
   }
 
+  // Most recent first, applied to roots and to each sibling group so the tree
+  // shape is preserved: a child never leaves its parent, it only moves within
+  // its own level.
+  const recency = subtreeRecencyBySessionId(sessions, childrenByPath);
+  const originalIndex = new Map(sessions.map((session, index) => [session.id, index]));
+  const mostRecentFirst = (a: SessionInfo, b: SessionInfo): number =>
+    (recency.get(b.id) ?? 0) - (recency.get(a.id) ?? 0)
+    || (originalIndex.get(a.id) ?? 0) - (originalIndex.get(b.id) ?? 0);
+  roots.sort(mostRecentFirst);
+  for (const children of childrenByPath.values()) children.sort(mostRecentFirst);
+
   const rows: SessionRow[] = [];
   const visit = (session: SessionInfo, depth: number, stack: Set<string>) => {
     const sessionKey = normalizeSessionPath(session.path);
@@ -661,4 +672,42 @@ function sessionRows(sessions: SessionInfo[]): SessionRow[] {
   };
   for (const root of roots) visit(root, 0, new Set());
   return rows;
+}
+
+/**
+ * Recency of each session's whole subtree, so a branch sorts by its liveliest
+ * member rather than by its root's own timestamp.
+ *
+ * Without this a long-running conversation would sink down the list the moment
+ * you forked it, because the fork carries the activity while the parent's own
+ * `modified` stops advancing. Ranking a parent by its most recent descendant
+ * keeps the active branch reachable at the top.
+ */
+function subtreeRecencyBySessionId(
+  sessions: readonly SessionInfo[],
+  childrenByPath: ReadonlyMap<string, SessionInfo[]>,
+): Map<string, number> {
+  const memo = new Map<string, number>();
+  const compute = (session: SessionInfo, stack: Set<string>): number => {
+    const cached = memo.get(session.id);
+    if (cached !== undefined) return cached;
+    const key = normalizeSessionPath(session.path);
+    // A parent link cycle is already tolerated when rendering; stop descending
+    // rather than recursing forever, and rank this node on its own timestamp.
+    if (stack.has(key)) return sessionRecency(session);
+    const nextStack = new Set(stack);
+    nextStack.add(key);
+    let latest = sessionRecency(session);
+    for (const child of childrenByPath.get(key) ?? []) latest = Math.max(latest, compute(child, nextStack));
+    memo.set(session.id, latest);
+    return latest;
+  };
+  for (const session of sessions) compute(session, new Set());
+  return memo;
+}
+
+/** An unparseable timestamp sorts last instead of poisoning the comparison with NaN. */
+function sessionRecency(session: SessionInfo): number {
+  const modified = Date.parse(session.modified);
+  return Number.isNaN(modified) ? Number.NEGATIVE_INFINITY : modified;
 }

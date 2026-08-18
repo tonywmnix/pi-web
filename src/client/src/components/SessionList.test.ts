@@ -193,6 +193,81 @@ describe("sessionRowsForCurrentTree", () => {
   });
 });
 
+describe("session ordering", () => {
+  const at = (iso: string) => ({ modified: iso });
+
+  it("puts the most recently modified session first", () => {
+    const rows = sessionRowsForCurrentTree([
+      session("stale", at("2026-06-01T00:00:00.000Z")),
+      session("newest", at("2026-06-09T00:00:00.000Z")),
+      session("middle", at("2026-06-05T00:00:00.000Z")),
+    ]);
+
+    expect(rows.map((row) => row.session.id)).toEqual(["newest", "middle", "stale"]);
+  });
+
+  it("orders siblings by recency without detaching them from their parent", () => {
+    const parent = session("parent", at("2026-06-01T00:00:00.000Z"));
+    const oldChild = session("old-child", { parentSessionPath: parent.path, ...at("2026-06-02T00:00:00.000Z") });
+    const newChild = session("new-child", { parentSessionPath: parent.path, ...at("2026-06-08T00:00:00.000Z") });
+
+    expect(rowSummaries(sessionRowsForCurrentTree([parent, oldChild, newChild]))).toEqual([
+      { id: "parent", depth: 0, hasMissingParent: false },
+      { id: "new-child", depth: 1, hasMissingParent: false },
+      { id: "old-child", depth: 1, hasMissingParent: false },
+    ]);
+  });
+
+  it("ranks a branch by its liveliest member, so an active fork lifts its parent", () => {
+    // The parent itself is the oldest thing in the list, but its fork is the
+    // newest: the branch must still sort above an unrelated newer session.
+    const parent = session("parent", at("2026-06-01T00:00:00.000Z"));
+    const activeFork = session("fork", { parentSessionPath: parent.path, ...at("2026-06-10T00:00:00.000Z") });
+    const unrelated = session("unrelated", at("2026-06-05T00:00:00.000Z"));
+
+    expect(rowSummaries(sessionRowsForCurrentTree([parent, activeFork, unrelated]))).toEqual([
+      { id: "parent", depth: 0, hasMissingParent: false },
+      { id: "fork", depth: 1, hasMissingParent: false },
+      { id: "unrelated", depth: 0, hasMissingParent: false },
+    ]);
+  });
+
+  it("keeps the incoming order for equal timestamps rather than reshuffling", () => {
+    const rows = sessionRowsForCurrentTree([
+      session("first", at("2026-06-09T00:00:00.000Z")),
+      session("second", at("2026-06-09T00:00:00.000Z")),
+      session("third", at("2026-06-09T00:00:00.000Z")),
+    ]);
+
+    expect(rows.map((row) => row.session.id)).toEqual(["first", "second", "third"]);
+  });
+
+  it("sorts an unparseable timestamp last instead of corrupting the order", () => {
+    const rows = sessionRowsForCurrentTree([
+      session("broken", at("not-a-date")),
+      session("good", at("2026-06-05T00:00:00.000Z")),
+    ]);
+
+    expect(rows.map((row) => row.session.id)).toEqual(["good", "broken"]);
+  });
+
+  it("terminates on a parent link cycle instead of recursing forever", () => {
+    const a = session("a", at("2026-06-02T00:00:00.000Z"));
+    const b = session("b", at("2026-06-07T00:00:00.000Z"));
+    const cyclicA = { ...a, parentSessionPath: b.path };
+    const cyclicB = { ...b, parentSessionPath: a.path };
+
+    const rows = sessionRowsForCurrentTree([cyclicA, cyclicB]);
+
+    // Documents PRE-EXISTING behaviour, not a consequence of recency ordering:
+    // each session's parent is present, so neither is treated as a root and the
+    // whole cycle renders nothing. Root detection is untouched by this change.
+    // What this test guards is that recency computation walks the cycle without
+    // recursing forever - if it did, this case would hang rather than fail.
+    expect(rows).toEqual([]);
+  });
+});
+
 function rowSummaries(rows: ReturnType<typeof sessionRowsForCurrentTree>) {
   return rows.map((row) => ({ id: row.session.id, depth: row.depth, hasMissingParent: row.hasMissingParent }));
 }
