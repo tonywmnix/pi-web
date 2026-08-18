@@ -15,5 +15,8 @@ dist/
 # Local runtime attachment uploads (created by the chat composer "save to folder" mode).
 .pi-web/
 
+# Per-checkout agent state (pi session notes and learned-memory logs).
+.pi/
+
 # Dev docs site staging output (scripts/build-docs-dev.mjs).
 /docs/.deploy/
