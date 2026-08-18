@@ -5,6 +5,8 @@ import { textMessage } from "../chatMessages";
 import { machineSessionKey } from "../machineKeys";
 import { clearDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { clearAskDraft } from "../askDrafts";
+import { AskAttentionTracker } from "../askAttention";
+import { playAskChime } from "../askSound";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { isShellInput } from "../inputModes";
 import { fileCompletionInsertText } from "../promptCompletions";
@@ -52,6 +54,8 @@ export interface SelectedSessionReady {
 export interface SessionControllerDependencies {
   api?: typeof defaultApi;
   socket?: SessionEventSocket;
+  /** Audible alert for a session that starts waiting on an answer; injected so tests stay silent. */
+  playAskSound?: () => void;
   transcripts?: ChatTranscriptStore;
   notifications?: SessionNotificationSessionBridge;
   replacePromptEditorText?: (replacement: PromptEditorTextReplacement) => void | Promise<void>;
@@ -125,6 +129,8 @@ export class SessionController {
   private readonly pendingSessionStarts = new Map<string, PendingSessionStart>();
   private readonly suppressedCreatedSessions = new Map<string, SuppressedCreatedSession>();
   private readonly selectedSessionRefreshes = new TrailingRefreshCoordinator<string>();
+  private readonly askAttention = new AskAttentionTracker();
+  private readonly playAskSound: () => void;
 
   constructor(
     private readonly getState: GetState,
@@ -136,12 +142,16 @@ export class SessionController {
     this.socket = deps.socket ?? new SessionSocket();
     this.api = deps.api ?? defaultApi;
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
+    this.playAskSound = deps.playAskSound ?? playAskChime;
     this.notifications = deps.notifications;
     this.replacePromptEditorText = deps.replacePromptEditorText;
     this.onSelectedSessionReady = deps.onSelectedSessionReady;
   }
 
   applyGlobalEvent(event: GlobalSessionEvent): void {
+    // Global status carries every session, not just the selected one, which is
+    // the point: the alert exists for the session you are not looking at.
+    if (event.type === "status.update" && this.askAttention.observe(event.status)) this.playAskSound();
     if (event.type === "status.update") this.queueStatusUpdate(event.status);
     else if (event.type === "activity.update") this.queueActivityUpdate(event.activity);
     else if (event.type === "session.created") this.applyCreatedSession(event.session);

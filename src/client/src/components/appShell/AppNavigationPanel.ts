@@ -1,5 +1,6 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property, query } from "lit/decorators.js";
+import { customElement, property, query, state } from "lit/decorators.js";
+import { isAskSoundEnabled, setAskSoundEnabled } from "../../askSound";
 import type { Machine, MachineHealth, Project, SessionActivity, SessionInfo, SessionStatus, Workspace } from "../../api";
 import type { MachineStatusSnapshot } from "../../../../shared/machineStatus";
 import type { WorkspaceLabelItem } from "../../plugins/types";
@@ -72,11 +73,22 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) onFocusNavigationTarget?: (target: NavigationFocusTarget) => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
 
+  /**
+   * Browser-local, so it is read and written here rather than threaded through
+   * app state: whether a sound is welcome depends on the device, not the project.
+   */
+  @state() private askSoundEnabled = isAskSoundEnabled();
+
   @query("machine-list") private machineList?: KeyboardNavigableSection;
   @query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
   @query("project-list") private projectList?: KeyboardNavigableSection;
   @query("workspace-list") private workspaceList?: KeyboardNavigableSection;
   @query("session-list") private sessionList?: KeyboardNavigableSection;
+
+  private toggleAskSound(): void {
+    this.askSoundEnabled = !this.askSoundEnabled;
+    setAskSoundEnabled(this.askSoundEnabled);
+  }
 
   async focusSection(section: NavigationSection): Promise<boolean> {
     await this.updateComplete;
@@ -92,6 +104,13 @@ export class AppNavigationPanel extends LitElement {
     return html`
       <header>
         <strong>PI WEB</strong>
+        <button
+          class="ask-sound-toggle"
+          aria-pressed=${String(this.askSoundEnabled)}
+          title=${this.askSoundEnabled ? "Question alert sound is on" : "Question alert sound is off"}
+          aria-label=${this.askSoundEnabled ? "Turn off the question alert sound" : "Turn on the question alert sound"}
+          @click=${() => { this.toggleAskSound(); }}
+        >${this.askSoundEnabled ? "\u{1F514}" : "\u{1F515}"}</button>
         ${shouldShowMachinesSection(this.machines) ? html`
           <machine-switcher
             .machines=${this.machines}
@@ -221,6 +240,10 @@ export class AppNavigationPanel extends LitElement {
     :host { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
     :host([compact]) { flex: 1 1 auto; }
     header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid var(--pi-border); }
+    .ask-sound-toggle { flex: 0 0 auto; margin-left: auto; min-width: 26px; height: 22px; padding: 0 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; font-size: 13px; line-height: 1; cursor: pointer; }
+    .ask-sound-toggle:hover { border-color: var(--pi-border); background: var(--pi-surface-hover); }
+    .ask-sound-toggle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
+    .ask-sound-toggle[aria-pressed="false"] { opacity: 0.55; }
     header strong { flex: 0 0 auto; }
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }

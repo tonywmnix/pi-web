@@ -7,6 +7,7 @@ import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPe
 import { normalizeSessionPath } from "../sessionPaths";
 import { isSessionActive } from "../../../shared/activity";
 import { actionMenuPanelStyle } from "./actionMenu";
+import { statusAwaitsAnswer } from "../askAttention";
 import { renderActionActivityIndicator, type ActivityIndicatorKind } from "./activityBadge";
 import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
@@ -583,8 +584,7 @@ export function sessionRowActivityKind(
  * the `ask_user` tool or an extension confirm/select/input dialog.
  */
 export function sessionRowAwaitingAnswer(status: SessionStatus | undefined): boolean {
-  if (status === undefined) return false;
-  return status.pendingAsk !== undefined || (status.pendingDialogs ?? []).length > 0;
+  return statusAwaitsAnswer(status);
 }
 
 function activityKindLabel(kind: ActivityIndicatorKind | undefined): string {
