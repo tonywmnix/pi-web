@@ -3,10 +3,13 @@ import type { AppState, ClosedExtensionDialog } from "../appState";
 import { forgetCachedNewSession, isCachedNewSessionInfo, markCachedNewSessionInfo, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "../cachedNewSessions";
 import { textMessage } from "../chatMessages";
 import { machineSessionKey } from "../machineKeys";
+import { sessionLabel, shortSessionId } from "../sessionLabels";
 import { clearDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { clearAskDraft } from "../askDrafts";
 import { AskAttentionTracker } from "../askAttention";
 import { playAskChime } from "../askSound";
+import { SessionDoneTracker } from "../agentDone";
+import { showAgentNotification, type AgentNotificationKind } from "../agentNotifications";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { isShellInput } from "../inputModes";
 import { fileCompletionInsertText } from "../promptCompletions";
@@ -56,6 +59,8 @@ export interface SessionControllerDependencies {
   socket?: SessionEventSocket;
   /** Audible alert for a session that starts waiting on an answer; injected so tests stay silent. */
   playAskSound?: () => void;
+  /** Desktop notification for a question or a finished run; injected so tests raise nothing. */
+  notifyAgentEvent?: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string) => void;
   transcripts?: ChatTranscriptStore;
   notifications?: SessionNotificationSessionBridge;
   replacePromptEditorText?: (replacement: PromptEditorTextReplacement) => void | Promise<void>;
@@ -130,7 +135,9 @@ export class SessionController {
   private readonly suppressedCreatedSessions = new Map<string, SuppressedCreatedSession>();
   private readonly selectedSessionRefreshes = new TrailingRefreshCoordinator<string>();
   private readonly askAttention = new AskAttentionTracker();
+  private readonly sessionDone = new SessionDoneTracker();
   private readonly playAskSound: () => void;
+  private readonly notifyAgentEvent: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string) => void;
 
   constructor(
     private readonly getState: GetState,
@@ -143,20 +150,35 @@ export class SessionController {
     this.api = deps.api ?? defaultApi;
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
     this.playAskSound = deps.playAskSound ?? playAskChime;
+    this.notifyAgentEvent = deps.notifyAgentEvent
+      ?? ((kind, sessionId, sessionLabel) => { showAgentNotification({ kind, sessionId, sessionLabel }); });
     this.notifications = deps.notifications;
     this.replacePromptEditorText = deps.replacePromptEditorText;
     this.onSelectedSessionReady = deps.onSelectedSessionReady;
   }
 
   applyGlobalEvent(event: GlobalSessionEvent): void {
-    // Global status carries every session, not just the selected one, which is
-    // the point: the alert exists for the session you are not looking at.
-    if (event.type === "status.update" && this.askAttention.observe(event.status)) this.playAskSound();
+    // Global status and activity carry every session, not just the selected
+    // one, which is the point: these alerts exist for the session you are not
+    // looking at.
+    if (event.type === "status.update" && this.askAttention.observe(event.status)) {
+      this.playAskSound();
+      this.alert("question", event.status.sessionId);
+    }
+    if (event.type === "activity.update" && this.sessionDone.observe(event.activity)) {
+      this.alert("done", event.activity.sessionId);
+    }
     if (event.type === "status.update") this.queueStatusUpdate(event.status);
     else if (event.type === "activity.update") this.queueActivityUpdate(event.activity);
     else if (event.type === "session.created") this.applyCreatedSession(event.session);
     else if (event.type === "session.name") this.applySessionName(event.sessionId, event.name);
     else if (event.type === "session.startup") this.queueStartupProgress(event);
+  }
+
+  /** Name the session in the notification body; the id alone means nothing to a reader. */
+  private alert(kind: AgentNotificationKind, sessionId: string): void {
+    const session = this.getState().sessions.find((candidate) => candidate.id === sessionId);
+    this.notifyAgentEvent(kind, sessionId, session === undefined ? shortSessionId(sessionId) : sessionLabel(session));
   }
 
   dispose() {

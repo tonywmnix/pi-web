@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { isAskSoundEnabled, setAskSoundEnabled } from "../../askSound";
+import { areNotificationsEnabled, notificationSupport, requestNotificationPermission, setNotificationsEnabled } from "../../agentNotifications";
 import type { Machine, MachineHealth, Project, SessionActivity, SessionInfo, SessionStatus, Workspace } from "../../api";
 import type { MachineStatusSnapshot } from "../../../../shared/machineStatus";
 import type { WorkspaceLabelItem } from "../../plugins/types";
@@ -78,6 +79,8 @@ export class AppNavigationPanel extends LitElement {
    * app state: whether a sound is welcome depends on the device, not the project.
    */
   @state() private askSoundEnabled = isAskSoundEnabled();
+  @state() private desktopNotificationsEnabled = areNotificationsEnabled();
+  @state() private notificationPermission = notificationSupport();
 
   @query("machine-list") private machineList?: KeyboardNavigableSection;
   @query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
@@ -88,6 +91,31 @@ export class AppNavigationPanel extends LitElement {
   private toggleAskSound(): void {
     this.askSoundEnabled = !this.askSoundEnabled;
     setAskSoundEnabled(this.askSoundEnabled);
+  }
+
+  private notificationTitle(): string {
+    if (this.notificationPermission === "unsupported") return "This browser does not support desktop notifications";
+    if (this.notificationPermission === "denied") return "Desktop notifications are blocked in browser settings";
+    if (!this.desktopNotificationsEnabled) return "Desktop notifications are off";
+    return "Desktop notifications are on for questions and finished runs";
+  }
+
+  /**
+   * Turning these on asks the browser for permission, which is only allowed
+   * from a user gesture - hence requesting here rather than at startup.
+   */
+  private async toggleDesktopNotifications(): Promise<void> {
+    if (this.desktopNotificationsEnabled) {
+      this.desktopNotificationsEnabled = false;
+      setNotificationsEnabled(false);
+      return;
+    }
+    this.notificationPermission = notificationSupport() === "default"
+      ? await requestNotificationPermission()
+      : notificationSupport();
+    const granted = this.notificationPermission === "granted";
+    this.desktopNotificationsEnabled = granted;
+    setNotificationsEnabled(granted);
   }
 
   async focusSection(section: NavigationSection): Promise<boolean> {
@@ -111,6 +139,14 @@ export class AppNavigationPanel extends LitElement {
           aria-label=${this.askSoundEnabled ? "Turn off the question alert sound" : "Turn on the question alert sound"}
           @click=${() => { this.toggleAskSound(); }}
         >${this.askSoundEnabled ? "\u{1F514}" : "\u{1F515}"}</button>
+        <button
+          class="ask-sound-toggle"
+          ?disabled=${this.notificationPermission === "unsupported" || this.notificationPermission === "denied"}
+          aria-pressed=${String(this.desktopNotificationsEnabled && this.notificationPermission === "granted")}
+          title=${this.notificationTitle()}
+          aria-label=${this.notificationTitle()}
+          @click=${() => { void this.toggleDesktopNotifications(); }}
+        >\u{1F5A5}</button>
         ${shouldShowMachinesSection(this.machines) ? html`
           <machine-switcher
             .machines=${this.machines}

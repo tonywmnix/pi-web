@@ -2,7 +2,7 @@ import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionActivity, SessionInfo, SessionStatus } from "../api";
 import { isCachedNewSessionInfo } from "../cachedNewSessions";
-import { shortSessionId } from "../sessionLabels";
+import { sessionLabel } from "../sessionLabels";
 import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPersistence";
 import { normalizeSessionPath } from "../sessionPaths";
 import { isSessionActive } from "../../../shared/activity";
@@ -21,10 +21,7 @@ import { listStyles } from "./shared";
 const ORPHAN_PARENT_LABEL = "parent unavailable";
 const ORPHAN_PARENT_TITLE = "Parent session is not available in this workspace";
 
-function sessionLabel(session: SessionInfo): string {
-  if (session.name !== undefined && session.name !== "") return session.name;
-  return session.firstMessage !== "" ? session.firstMessage : shortSessionId(session.id);
-}
+
 
 export interface SessionRow {
   session: SessionInfo;
