@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { isAskSoundEnabled, setAskSoundEnabled } from "../../askSound";
-import { areNotificationsEnabled, notificationSupport, requestNotificationPermission, setNotificationsEnabled } from "../../agentNotifications";
+import { areNotificationsEnabled, notificationGuidance, notificationSupport, requestNotificationPermission, setNotificationsEnabled } from "../../agentNotifications";
 import type { Machine, MachineHealth, Project, SessionActivity, SessionInfo, SessionStatus, Workspace } from "../../api";
 import type { MachineStatusSnapshot } from "../../../../shared/machineStatus";
 import type { WorkspaceLabelItem } from "../../plugins/types";
@@ -81,6 +81,7 @@ export class AppNavigationPanel extends LitElement {
   @state() private askSoundEnabled = isAskSoundEnabled();
   @state() private desktopNotificationsEnabled = areNotificationsEnabled();
   @state() private notificationPermission = notificationSupport();
+  @state() private notificationNotice = "";
 
   @query("machine-list") private machineList?: KeyboardNavigableSection;
   @query("machine-switcher") private machineSwitcher?: KeyboardNavigableSection;
@@ -108,6 +109,7 @@ export class AppNavigationPanel extends LitElement {
     if (this.desktopNotificationsEnabled) {
       this.desktopNotificationsEnabled = false;
       setNotificationsEnabled(false);
+      this.notificationNotice = "";
       return;
     }
     this.notificationPermission = notificationSupport() === "default"
@@ -116,6 +118,34 @@ export class AppNavigationPanel extends LitElement {
     const granted = this.notificationPermission === "granted";
     this.desktopNotificationsEnabled = granted;
     setNotificationsEnabled(granted);
+    this.notificationNotice = notificationGuidance(this.notificationPermission) ?? "";
+  }
+
+  /**
+   * Permission can change outside this button - the address-bar control is the
+   * only way back from a block, and the browser tells the page nothing when it
+   * is used. Re-reading whenever the tab comes back makes granting it there
+   * take effect without a reload.
+   */
+  private readonly syncNotificationPermission = (): void => {
+    const permission = notificationSupport();
+    if (permission === this.notificationPermission) return;
+    this.notificationPermission = permission;
+    if (permission !== "granted") return;
+    this.notificationNotice = "";
+    if (areNotificationsEnabled()) this.desktopNotificationsEnabled = true;
+  };
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    document.addEventListener("visibilitychange", this.syncNotificationPermission);
+    window.addEventListener("focus", this.syncNotificationPermission);
+  }
+
+  override disconnectedCallback(): void {
+    document.removeEventListener("visibilitychange", this.syncNotificationPermission);
+    window.removeEventListener("focus", this.syncNotificationPermission);
+    super.disconnectedCallback();
   }
 
   async focusSection(section: NavigationSection): Promise<boolean> {
@@ -141,7 +171,6 @@ export class AppNavigationPanel extends LitElement {
         >${this.askSoundEnabled ? "\u{1F514}" : "\u{1F515}"}</button>
         <button
           class="ask-sound-toggle"
-          ?disabled=${this.notificationPermission === "unsupported" || this.notificationPermission === "denied"}
           aria-pressed=${String(this.desktopNotificationsEnabled && this.notificationPermission === "granted")}
           title=${this.notificationTitle()}
           aria-label=${this.notificationTitle()}
@@ -164,6 +193,18 @@ export class AppNavigationPanel extends LitElement {
           <button title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>Actions</button>
         </div>
       </header>
+      ${this.notificationNotice === "" ? null : html`
+        <p class="notification-notice" role="status">
+          <span>${this.notificationNotice}</span>
+          <button
+            type="button"
+            class="notice-dismiss"
+            title="Dismiss"
+            aria-label="Dismiss notification message"
+            @click=${() => { this.notificationNotice = ""; }}
+          >\u2715</button>
+        </p>
+      `}
       ${this.compact && shouldShowMachinesSection(this.machines) ? html`
         <machine-list
           .machines=${this.machines}
@@ -280,6 +321,10 @@ export class AppNavigationPanel extends LitElement {
     .ask-sound-toggle:hover { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     .ask-sound-toggle:focus-visible { outline: 2px solid var(--pi-accent); outline-offset: 1px; }
     .ask-sound-toggle[aria-pressed="false"] { opacity: 0.55; }
+    .notification-notice { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--pi-border); background: var(--pi-surface); color: var(--pi-text-muted); font-size: 12px; line-height: 1.4; }
+    .notification-notice span { flex: 1 1 auto; min-width: 0; }
+    .notice-dismiss { flex: 0 0 auto; padding: 0 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; }
+    .notice-dismiss:hover { border-color: var(--pi-border); background: var(--pi-surface-hover); }
     header strong { flex: 0 0 auto; }
     machine-switcher { flex: 1 1 auto; min-width: 0; }
     :host([compact]) header { display: none; }

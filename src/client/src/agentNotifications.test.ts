@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   areNotificationsEnabled,
   isPageInForeground,
+  notificationGuidance,
   notificationTitle,
   setNotificationsEnabled,
   shouldShowNotification,
@@ -82,5 +83,32 @@ describe("notificationTitle", () => {
   it("distinguishes a question from a finished run", () => {
     expect(notificationTitle("question")).toBe("Waiting for your answer");
     expect(notificationTitle("done")).toBe("Agent finished");
+  });
+});
+
+describe("notificationGuidance", () => {
+  it("says nothing once permission is granted", () => {
+    expect(notificationGuidance("granted")).toBeNull();
+  });
+
+  it("explains a request the browser answered without prompting", () => {
+    // The reported bug: a quieter-UI browser resolves `default` with no prompt
+    // on screen, so the toggle stays off and nothing explains why.
+    expect(notificationGuidance("default")).toContain("address bar");
+  });
+
+  it("points a blocked site at the setting that can undo it", () => {
+    expect(notificationGuidance("denied")).toContain("blocked");
+  });
+
+  it("explains a browser that cannot notify at all", () => {
+    expect(notificationGuidance("unsupported")).toContain("cannot");
+  });
+
+  it("gives every non-granted state something to show", () => {
+    for (const permission of ["default", "denied", "unsupported"] as const) {
+      expect(notificationGuidance(permission)).not.toBe("");
+      expect(notificationGuidance(permission)).not.toBeNull();
+    }
   });
 });

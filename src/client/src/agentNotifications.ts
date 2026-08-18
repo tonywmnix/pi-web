@@ -47,6 +47,29 @@ export function notificationSupport(): NotificationSupport {
   return Notification.permission;
 }
 
+/**
+ * What to tell someone whose notifications are not on, or null once they are.
+ *
+ * `default` is the case worth spelling out. A browser is free to answer a
+ * permission request without ever showing a prompt - Chrome's quieter UI does
+ * exactly that on shared domains, resolving `default` and hiding the ask behind
+ * an address-bar icon. Treating that as a plain failure leaves a button that
+ * does nothing when clicked and explains nothing, which is indistinguishable
+ * from a bug.
+ */
+export function notificationGuidance(permission: NotificationSupport): string | null {
+  switch (permission) {
+    case "granted":
+      return null;
+    case "unsupported":
+      return "This browser cannot show desktop notifications.";
+    case "denied":
+      return "Notifications are blocked for this site. Allow them in the address-bar site settings, then click again.";
+    case "default":
+      return "The browser did not show a permission prompt. Look for a notifications icon in the address bar, choose Allow, then click again.";
+  }
+}
+
 /** Ask the browser for permission. Must be called from a user gesture. */
 export async function requestNotificationPermission(): Promise<NotificationSupport> {
   if (typeof Notification === "undefined") return "unsupported";
