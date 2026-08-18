@@ -47,6 +47,7 @@ import { registerWorkspaceCatalogRoutes } from "./sessiond/workspaceCatalogRoute
 import { registerPluginBackendRoutes } from "./sessiond/pluginBackendRoutes.js";
 import { registerWorkspaceRemovalRoutes } from "./sessiond/workspaceRemovalRoutes.js";
 import { createWorkspaceProviderRuntimeSnapshot } from "./workspaces/workspaceCatalog.js";
+import { installWebSocketHeartbeat } from "./webSocketHeartbeat.js";
 import { WorkspaceRemovalService } from "./workspaces/workspaceRemovalService.js";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
@@ -80,6 +81,7 @@ if (serverPluginRecovery.safeStartDiagnostic !== undefined) {
   );
 }
 await app.register(fastifyWebsocket);
+installWebSocketHeartbeat(app);
 let serverQuiescing = false;
 app.addHook("onRequest", (_request, reply, done) => {
   if (!serverQuiescing) {

@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyServerOpt
 import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
+import { installWebSocketHeartbeat } from "./webSocketHeartbeat.js";
 import { ProjectStore } from "./storage/projectStore.js";
 import { ProjectService } from "./projects/projectService.js";
 import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
@@ -175,6 +176,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     threshold: 1024,
   });
   await app.register(fastifyWebsocket);
+  installWebSocketHeartbeat(app);
 
   const projects = deps.projects ?? new ProjectService(new ProjectStore());
   const configService = deps.config ?? createFilePiWebConfigService();
