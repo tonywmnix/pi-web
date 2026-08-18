@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { SessionEventHub, type RealtimeSocket } from "./sessionEventHub.js";
+import { SESSION_STREAM_KEEPALIVE_TYPE, SessionEventHub, startSessionEventKeepalive, type RealtimeSocket } from "./sessionEventHub.js";
 
 class FakeSocket extends EventEmitter implements RealtimeSocket {
   readonly OPEN = 1;
@@ -8,6 +8,45 @@ class FakeSocket extends EventEmitter implements RealtimeSocket {
   send = vi.fn();
   terminate = vi.fn();
 }
+
+describe("SessionEventHub keepalive", () => {
+  it("reaches session and global subscribers alike without disturbing the sequence stamp", () => {
+    const hub = new SessionEventHub();
+    const sessionSocket = new FakeSocket();
+    const globalSocket = new FakeSocket();
+    hub.add("s1", sessionSocket);
+    hub.addGlobal(globalSocket);
+
+    hub.publishKeepalive();
+    hub.publish("s1", { type: "assistant.delta", text: "hello" });
+
+    const keepalive = JSON.stringify({ type: SESSION_STREAM_KEEPALIVE_TYPE });
+    expect(sessionSocket.send).toHaveBeenNthCalledWith(1, keepalive);
+    expect(globalSocket.send).toHaveBeenCalledWith(keepalive);
+    // A keepalive is transport liveness, so it must not consume a seq that the
+    // join-time exactly-once filter compares against the stream snapshot.
+    expect(sessionSocket.send).toHaveBeenNthCalledWith(2, JSON.stringify({ type: "assistant.delta", text: "hello", seq: 1 }));
+  });
+
+  it("publishes on the scheduled cadence until disposed", () => {
+    const publishKeepalive = vi.fn();
+    let tick: (() => void) | undefined;
+    let stopped = false;
+    const stop = startSessionEventKeepalive({ publishKeepalive }, {
+      scheduleKeepalive: (publish) => {
+        tick = publish;
+        return () => { stopped = true; };
+      },
+    });
+
+    tick?.();
+    tick?.();
+    expect(publishKeepalive).toHaveBeenCalledTimes(2);
+
+    stop();
+    expect(stopped).toBe(true);
+  });
+});
 
 describe("SessionEventHub", () => {
   it("publishes session events only to sockets for that session", () => {

@@ -1,6 +1,16 @@
 import type { GlobalSessionEvent, RealtimeEvent, SessionNotificationSummaryEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { projectBrowserSessionEvent } from "../browserMessageProjection.js";
 
+/**
+ * Frame type of the stream keepalive. Deliberately outside the event
+ * vocabulary: it is transport liveness, not session state, and every client
+ * parser drops it.
+ */
+export const SESSION_STREAM_KEEPALIVE_TYPE = "stream.keepalive";
+
+/** How often {@link startSessionEventKeepalive} publishes a keepalive frame. */
+export const DEFAULT_SESSION_EVENT_KEEPALIVE_MS = 30_000;
+
 export interface RealtimeSocket {
   readonly OPEN: number;
   readyState: number;
@@ -76,6 +86,20 @@ export class SessionEventHub {
     this.sendToSockets(this.globalSockets, payload);
   }
 
+  /**
+   * Sends a frame every subscriber can observe simply by arriving.
+   *
+   * Browsers cannot see WebSocket protocol pongs, so a page has no way to tell
+   * a quiet stream from a dead one. This gives it a positive liveness signal on
+   * a known cadence; clients that do not recognise the frame drop it, which is
+   * why it carries no payload beyond its type.
+   */
+  publishKeepalive(): void {
+    const payload = JSON.stringify({ type: SESSION_STREAM_KEEPALIVE_TYPE });
+    for (const sockets of this.socketsBySession.values()) this.sendToSockets(sockets, payload);
+    this.sendToSockets(this.globalSockets, payload);
+  }
+
   private sendToSockets(sockets: Set<RealtimeSocket> | undefined, payload: string): void {
     if (sockets === undefined) return;
     for (const socket of sockets) this.sendToSocket(sockets, socket, payload);
@@ -94,4 +118,26 @@ export class SessionEventHub {
       }
     }
   }
+}
+
+export interface SessionEventKeepaliveOptions {
+  intervalMs?: number;
+  /** Injected by tests; defaults to an unref'd global interval. */
+  scheduleKeepalive?: (publish: () => void, intervalMs: number) => () => void;
+}
+
+/** Publishes hub keepalive frames on an interval; returns a disposer. */
+export function startSessionEventKeepalive(
+  hub: Pick<SessionEventHub, "publishKeepalive">,
+  options: SessionEventKeepaliveOptions = {},
+): () => void {
+  const publish = (): void => { hub.publishKeepalive(); };
+  const schedule = options.scheduleKeepalive ?? scheduleWithGlobalTimer;
+  return schedule(publish, options.intervalMs ?? DEFAULT_SESSION_EVENT_KEEPALIVE_MS);
+}
+
+function scheduleWithGlobalTimer(publish: () => void, intervalMs: number): () => void {
+  const timer = setInterval(publish, intervalMs);
+  timer.unref();
+  return () => { clearInterval(timer); };
 }

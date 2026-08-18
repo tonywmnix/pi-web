@@ -7,7 +7,7 @@ import { WorkspaceActivityService } from "./activity/workspaceActivityService.js
 import { MachineStatusService } from "./status/machineStatusService.js";
 import { registerMachineStatusRoutes } from "./status/machineStatusRoutes.js";
 import { CachedWorkspaceAttribution } from "./status/workspaceAttribution.js";
-import { SessionEventHub } from "./realtime/sessionEventHub.js";
+import { SessionEventHub, startSessionEventKeepalive } from "./realtime/sessionEventHub.js";
 import { AuthService } from "./sessions/authService.js";
 import { bootstrapAndFreezeGlobalExtensionProviders } from "./sessions/globalProviderPolicy.js";
 import { registerAuthRoutes } from "./sessions/authRoutes.js";
@@ -164,6 +164,10 @@ async function createSessionDaemonRuntime() {
   });
   try {
     const eventHub = new SessionEventHub();
+    // Gives every browser a positive liveness signal on the session and global
+    // streams, so a page can tell a quiet stream from a socket that died
+    // without a close.
+    const stopEventKeepalive = startSessionEventKeepalive(eventHub);
     const notificationStore = new SessionNotificationStore();
     const unreadStore = new SessionUnreadStore({
       persistence: new FileSessionUnreadPersistence(defaultSessionUnreadFilePath(daemonEnvironment)),
@@ -287,7 +291,7 @@ async function createSessionDaemonRuntime() {
       await runSessionDaemonShutdown({
         logger: app.log,
         dependencies: {
-          quiesceServer: () => { serverQuiescing = true; },
+          quiesceServer: () => { serverQuiescing = true; stopEventKeepalive(); },
           serverPlugins,
           terminals,
           catalogRefresher,

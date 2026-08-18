@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RealtimeSocket, SessionSocket, parseRealtimeSocketEvent, parseSessionSocketEvent } from "./sessionSocket";
+import { RealtimeSocket, SessionSocket, STALE_STREAM_TIMEOUT_MS, parseRealtimeSocketEvent, parseSessionSocketEvent } from "./sessionSocket";
 
 function notification(order = 1) {
   return {
@@ -329,16 +329,35 @@ class FakeWebSocket {
   }
 }
 
-describe("socket instance isolation", () => {
-  const setTimeoutSpy = vi.fn(() => 1);
+const setTimeoutSpy = vi.fn<(callback: () => void, delay?: number) => number>(() => 1);
 
-  beforeEach(() => {
-    FakeWebSocket.instances.length = 0;
-    setTimeoutSpy.mockClear();
-    vi.stubGlobal("WebSocket", FakeWebSocket);
-    vi.stubGlobal("document", { baseURI: "https://pi.example.test/" });
-    vi.stubGlobal("window", { clearTimeout: vi.fn(), setTimeout: setTimeoutSpy });
-  });
+function stubSocketGlobals(): void {
+  FakeWebSocket.instances.length = 0;
+  setTimeoutSpy.mockClear();
+  vi.stubGlobal("WebSocket", FakeWebSocket);
+  vi.stubGlobal("document", { baseURI: "https://pi.example.test/" });
+  vi.stubGlobal("window", { clearTimeout: vi.fn(), setTimeout: setTimeoutSpy });
+}
+
+/** Delays of timers the socket scheduled, excluding the staleness watchdog's own timer. */
+function reconnectDelays(): (number | undefined)[] {
+  return setTimeoutSpy.mock.calls.filter(([, delay]) => delay !== STALE_STREAM_TIMEOUT_MS).map(([, delay]) => delay);
+}
+
+function runScheduled(delay: number): void {
+  const call = setTimeoutSpy.mock.calls.filter(([, scheduled]) => scheduled === delay).at(-1);
+  if (call === undefined) throw new Error(`expected a timer scheduled at ${String(delay)}ms`);
+  call[0]();
+}
+
+function latestSocket(): FakeWebSocket {
+  const socket = FakeWebSocket.instances.at(-1);
+  if (socket === undefined) throw new Error("expected a socket");
+  return socket;
+}
+
+describe("socket instance isolation", () => {
+  beforeEach(stubSocketGlobals);
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -363,7 +382,7 @@ describe("socket instance isolation", () => {
 
     expect(oldHandler).not.toHaveBeenCalled();
     expect(newHandler).not.toHaveBeenCalled();
-    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    expect(reconnectDelays()).toEqual([]);
 
     const newSocket = FakeWebSocket.instances[1];
     if (newSocket === undefined) throw new Error("expected replacement session socket");
@@ -400,3 +419,75 @@ describe("socket instance isolation", () => {
     expect(newHandler).toHaveBeenCalledOnce();
   });
 });
+
+describe("stale stream recovery", () => {
+  beforeEach(stubSocketGlobals);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("reconnects a session socket that goes silent, without waiting for a close event", () => {
+    const socket = new SessionSocket();
+    socket.connect({ id: "session-1", cwd: "/repo" }, vi.fn());
+    const dead = latestSocket();
+    dead.onopen?.();
+
+    // A connection that dies without a close handshake never fires onclose, so
+    // silence is the only signal the browser gets.
+    runScheduled(STALE_STREAM_TIMEOUT_MS);
+
+    expect(reconnectDelays()).toEqual([500]);
+    runScheduled(500);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(latestSocket()).not.toBe(dead);
+  });
+
+  it("treats any frame as proof of life, including one the parsers drop", async () => {
+    const handler = vi.fn();
+    const socket = new SessionSocket();
+    socket.connect({ id: "session-1", cwd: "/repo" }, handler);
+    const live = latestSocket();
+    live.onopen?.();
+    const timersBefore = setTimeoutSpy.mock.calls.length;
+
+    // The daemon's keepalive is deliberately outside the event vocabulary: it
+    // must still hold the watchdog off even though nothing renders it.
+    live.onmessage?.({ data: JSON.stringify({ type: "stream.keepalive" }) });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler).not.toHaveBeenCalled();
+    const rearmed = setTimeoutSpy.mock.calls.slice(timersBefore);
+    expect(rearmed.map(([, delay]) => delay)).toEqual([STALE_STREAM_TIMEOUT_MS]);
+    expect(reconnectDelays()).toEqual([]);
+  });
+
+  it("reconnects a silent realtime socket too", () => {
+    const socket = new RealtimeSocket();
+    socket.connect(vi.fn());
+    const dead = latestSocket();
+    dead.onopen?.();
+
+    runScheduled(STALE_STREAM_TIMEOUT_MS);
+
+    expect(reconnectDelays()).toEqual([500]);
+    runScheduled(500);
+    expect(latestSocket()).not.toBe(dead);
+  });
+
+  it("stops watching a socket the caller closed", () => {
+    const socket = new SessionSocket();
+    socket.connect({ id: "session-1", cwd: "/repo" }, vi.fn());
+    const stale = setTimeoutSpy.mock.calls.filter(([, delay]) => delay === STALE_STREAM_TIMEOUT_MS).at(-1);
+    if (stale === undefined) throw new Error("expected a staleness timer");
+
+    socket.close();
+    stale[0]();
+
+    expect(reconnectDelays()).toEqual([]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+

@@ -6,6 +6,16 @@ export type { GlobalSessionEvent, RealtimeEvent, SessionUiEvent } from "../../sh
 
 export type BrowserRealtimeEvent = Exclude<RealtimeEvent, { type: "notifications.summary" }>;
 
+/**
+ * How long a socket may go without any frame before it is presumed dead.
+ *
+ * The daemon publishes a keepalive on a 30s cadence, so this is three missed
+ * beats: long enough to survive a throttled background tab or a slow relay,
+ * short enough that a page recovers on its own instead of waiting for a
+ * reload.
+ */
+export const STALE_STREAM_TIMEOUT_MS = 90_000;
+
 export class SessionSocket {
   private socket: WebSocket | undefined;
   private session: SessionRef | undefined;
@@ -17,6 +27,7 @@ export class SessionSocket {
   private onReconnect: (() => void) | undefined;
   private onInitialOpen: (() => void) | undefined;
   private machineId = "local";
+  private readonly liveness = new SocketLivenessWatchdog();
 
   connect(
     session: SessionRef,
@@ -42,6 +53,7 @@ export class SessionSocket {
   close(): void {
     this.shouldReconnect = false;
     window.clearTimeout(this.reconnectTimer);
+    this.liveness.stop();
     closeSocketQuietly(this.socket);
     this.socket = undefined;
     this.session = undefined;
@@ -57,21 +69,36 @@ export class SessionSocket {
     if (session === undefined || session.id === "" || session.cwd === "" || !this.shouldReconnect) return;
     const socket = sessionEvents(session, this.machineId);
     this.socket = socket;
+    this.liveness.watch(() => { this.handleStaleStream(socket); });
     socket.onopen = () => {
       if (this.socket !== socket) return;
       this.reconnectDelay = 500;
+      this.liveness.recordActivity();
       const isReconnect = this.hasOpened;
       this.hasOpened = true;
       if (isReconnect) this.onReconnect?.();
       else this.onInitialOpen?.();
     };
-    socket.onmessage = (message) => void this.handleMessage(message.data, socket, session);
+    socket.onmessage = (message) => {
+      this.liveness.recordActivity();
+      void this.handleMessage(message.data, socket, session);
+    };
     socket.onerror = () => { socket.close(); };
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
+      this.liveness.stop();
       this.scheduleReconnect();
     };
+  }
+
+  private handleStaleStream(socket: WebSocket): void {
+    if (this.socket !== socket) return;
+    this.socket = undefined;
+    // A half-open socket may never complete a close handshake, so reconnect off
+    // our own decision rather than waiting for a close event that cannot come.
+    closeSocketQuietly(socket);
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
@@ -98,6 +125,7 @@ export class RealtimeSocket {
   private reconnectDelay = 500;
   private shouldReconnect = false;
   private machineId = "local";
+  private readonly liveness = new SocketLivenessWatchdog();
 
   connect(onEvent: (event: BrowserRealtimeEvent) => void, onOpen?: () => void, machineId = "local"): void {
     this.close();
@@ -111,6 +139,7 @@ export class RealtimeSocket {
   close(): void {
     this.shouldReconnect = false;
     window.clearTimeout(this.reconnectTimer);
+    this.liveness.stop();
     closeSocketQuietly(this.socket);
     this.socket = undefined;
     this.onEvent = undefined;
@@ -122,18 +151,31 @@ export class RealtimeSocket {
     if (!this.shouldReconnect) return;
     const socket = realtimeEvents(this.machineId);
     this.socket = socket;
+    this.liveness.watch(() => { this.handleStaleStream(socket); });
     socket.onopen = () => {
       if (this.socket !== socket) return;
       this.reconnectDelay = 500;
+      this.liveness.recordActivity();
       this.onOpen?.();
     };
-    socket.onmessage = (message) => void this.handleMessage(message.data, socket);
+    socket.onmessage = (message) => {
+      this.liveness.recordActivity();
+      void this.handleMessage(message.data, socket);
+    };
     socket.onerror = () => { socket.close(); };
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
+      this.liveness.stop();
       this.scheduleReconnect();
     };
+  }
+
+  private handleStaleStream(socket: WebSocket): void {
+    if (this.socket !== socket) return;
+    this.socket = undefined;
+    closeSocketQuietly(socket);
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
@@ -205,6 +247,42 @@ async function parseSocketEvent(data: MessageEvent["data"]): Promise<unknown> {
     return undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Presumes a socket dead once no frame has arrived for {@link STALE_STREAM_TIMEOUT_MS}.
+ *
+ * A socket whose connection dies without a close handshake stays `OPEN`
+ * forever and fires no events, so the reconnect path that hangs off `onclose`
+ * never runs. Watching for silence is the only signal a browser has: it cannot
+ * observe the protocol pongs the server relies on.
+ */
+class SocketLivenessWatchdog {
+  private timer: number | undefined;
+  private onStale: (() => void) | undefined;
+
+  watch(onStale: () => void): void {
+    this.onStale = onStale;
+    this.recordActivity();
+  }
+
+  recordActivity(): void {
+    if (this.onStale === undefined) return;
+    window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { this.fire(); }, STALE_STREAM_TIMEOUT_MS);
+  }
+
+  stop(): void {
+    window.clearTimeout(this.timer);
+    this.timer = undefined;
+    this.onStale = undefined;
+  }
+
+  private fire(): void {
+    const onStale = this.onStale;
+    this.stop();
+    onStale?.();
   }
 }
 
