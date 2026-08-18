@@ -491,3 +491,54 @@ describe("stale stream recovery", () => {
   });
 });
 
+describe("resume revalidation", () => {
+  beforeEach(stubSocketGlobals);
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("reconnects on resume when the stream was already silent past the timeout", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const socket = new SessionSocket();
+    socket.connect({ id: "session-1", cwd: "/repo" }, vi.fn());
+    const dead = latestSocket();
+    dead.onopen?.();
+
+    // A hidden tab's timers are clamped, so the watchdog may not have fired
+    // even though the socket has been silent well past the timeout.
+    clock.mockReturnValue(1_000 + STALE_STREAM_TIMEOUT_MS);
+    socket.revalidate();
+
+    expect(reconnectDelays()).toEqual([500]);
+    runScheduled(500);
+    expect(latestSocket()).not.toBe(dead);
+  });
+
+  it("leaves a recently active stream connected", () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const socket = new RealtimeSocket();
+    socket.connect(vi.fn());
+    const live = latestSocket();
+    live.onopen?.();
+
+    clock.mockReturnValue(1_000 + STALE_STREAM_TIMEOUT_MS - 1);
+    socket.revalidate();
+
+    expect(reconnectDelays()).toEqual([]);
+    expect(latestSocket()).toBe(live);
+  });
+
+  it("ignores revalidation when no socket is being watched", () => {
+    const socket = new SessionSocket();
+    socket.connect({ id: "session-1", cwd: "/repo" }, vi.fn());
+    socket.close();
+
+    socket.revalidate();
+
+    expect(reconnectDelays()).toEqual([]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+

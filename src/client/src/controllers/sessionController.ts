@@ -28,6 +28,7 @@ export interface SessionEventSocket {
   ): void;
   setHandler(onEvent: (event: SessionUiEvent) => void): void;
   close(): void;
+  revalidate(): void;
 }
 
 export interface SessionNotificationSessionBridge {
@@ -153,6 +154,11 @@ export class SessionController {
     this.selectionSeq += 1;
     this.socket.close();
     this.clearPendingUpdates();
+  }
+
+  /** Asks the session stream to re-check its liveness, for browser resume. */
+  revalidateStream(): void {
+    this.socket.revalidate();
   }
 
   clearActiveSession() {

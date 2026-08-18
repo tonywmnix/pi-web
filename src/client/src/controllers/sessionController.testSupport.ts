@@ -50,10 +50,15 @@ export class FakeSocket implements SessionEventSocket {
   close(): void {
     // No-op.
   }
+
+  revalidate(): void {
+    // Test socket has no liveness to re-check.
+  }
 }
 
 export class EmitSocket implements SessionEventSocket {
   readonly connectedSessionIds: string[] = [];
+  revalidateCount = 0;
   private handler: ((event: SessionUiEvent) => void) | undefined;
   private onInitialOpen: (() => void) | undefined;
 
@@ -84,6 +89,10 @@ export class EmitSocket implements SessionEventSocket {
   close(): void {
     this.handler = undefined;
     this.onInitialOpen = undefined;
+  }
+
+  revalidate(): void {
+    this.revalidateCount += 1;
   }
 }
 

@@ -408,8 +408,23 @@ export class PiWebApp extends LitElement {
 
   private handleBrowserResumeSignal(): void {
     this.appShell.repairViewportPosition();
+    this.revalidateStreams();
     this.schedulePiWebStatusRefresh();
     this.retryPendingRemoteRouteRestoreSoon();
+  }
+
+  /**
+   * Re-checks both live streams the moment the browser says it resumed.
+   *
+   * Refreshing over HTTP repaints the page once, but leaves it fed by whatever
+   * socket it had; if that socket died while the page was away, the next
+   * answer never arrives. The staleness timers eventually catch it, though a
+   * hidden tab's timers are clamped, so this applies their verdict on the
+   * signal the browser actually gives us.
+   */
+  private revalidateStreams(): void {
+    this.realtime.revalidate();
+    this.sessions.revalidateStream();
   }
 
   private async refreshAfterBrowserResume(): Promise<void> {

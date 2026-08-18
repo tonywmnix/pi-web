@@ -64,6 +64,18 @@ export class SessionSocket {
     this.machineId = "local";
   }
 
+  /**
+   * Applies the staleness verdict now instead of waiting for the timer.
+   *
+   * Background tabs have their timers clamped and a sleeping machine does not
+   * run them at all, so a socket that died while the page was away can stay
+   * presumed-live well past the timeout. Callers invoke this when the browser
+   * says it has resumed.
+   */
+  revalidate(): void {
+    this.liveness.revalidate();
+  }
+
   private open(): void {
     const session = this.session;
     if (session === undefined || session.id === "" || session.cwd === "" || !this.shouldReconnect) return;
@@ -145,6 +157,11 @@ export class RealtimeSocket {
     this.onEvent = undefined;
     this.onOpen = undefined;
     this.machineId = "local";
+  }
+
+  /** See {@link SessionSocket.revalidate}. */
+  revalidate(): void {
+    this.liveness.revalidate();
   }
 
   private open(): void {
@@ -261,6 +278,7 @@ async function parseSocketEvent(data: MessageEvent["data"]): Promise<unknown> {
 class SocketLivenessWatchdog {
   private timer: number | undefined;
   private onStale: (() => void) | undefined;
+  private lastActivityAt = 0;
 
   watch(onStale: () => void): void {
     this.onStale = onStale;
@@ -269,8 +287,16 @@ class SocketLivenessWatchdog {
 
   recordActivity(): void {
     if (this.onStale === undefined) return;
+    this.lastActivityAt = Date.now();
     window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => { this.fire(); }, STALE_STREAM_TIMEOUT_MS);
+  }
+
+  /** Fires the stale verdict if the last frame is already older than the timeout. */
+  revalidate(): void {
+    if (this.onStale === undefined) return;
+    if (Date.now() - this.lastActivityAt < STALE_STREAM_TIMEOUT_MS) return;
+    this.fire();
   }
 
   stop(): void {
