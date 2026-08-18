@@ -1078,6 +1078,15 @@ export interface PiSessionServiceDependencies {
 
 export class PiSessionService implements SessionRouteService {
   private readonly active = new Map<string, ActiveSession<PiSessionRuntime>>();
+  /**
+   * cwd of each session whose question is still unanswered. Keyed by session id
+   * so a session that ends while blocked drops out, and holding the cwd here
+   * rather than re-deriving it keeps the projection correct even once the
+   * runtime is gone.
+   */
+  private readonly pendingQuestionCwdBySessionId = new Map<string, string>();
+  /** Sessions whose abort has been issued but whose turn is still unwinding. */
+  private readonly abortsInFlight = new Map<string, Promise<void>>();
   private readonly pendingSessionOpens = new Map<string, PendingSessionOpen>();
   /**
    * Sessions whose extension binding is still in flight. A `session_start`
@@ -2806,18 +2815,34 @@ export class PiSessionService implements SessionRouteService {
     return this.statusFromSession(session);
   }
 
+  /**
+   * The synchronous half of an abort: drop anything queued behind the current
+   * turn and settle run-scoped dialogs.
+   *
+   * Dialogs are settled now, at abort-request time: pi's agent loop waits for a
+   * parked `tool_call` dialog handler before it can emit `agent_end`, so leaving
+   * settlement to the `agent_end` observer would strand the dialog until its
+   * timeout. Doing it here also means a failing or hung runtime abort cannot
+   * strand the parked waiter.
+   */
+  private prepareAbort(session: PiAgentSession, sessionId: string): void {
+    this.clearCompactionPromptQueue(sessionId);
+    clearSessionQueue(session);
+    this.abortRunScopedExtensionDialogs(sessionId);
+  }
+
+  /**
+   * Abort and wait for the turn to finish unwinding.
+   *
+   * Prefer {@link requestAbort} for anything driven by a browser: this resolves
+   * only once the agent loop has actually stopped, which is unbounded from the
+   * caller's point of view.
+   */
   async abort(ref: PiSessionRef): Promise<void> {
     const active = this.activeForRef(ref);
     if (active === undefined) return;
     const sessionId = active.runtime.session.sessionId;
-    this.clearCompactionPromptQueue(sessionId);
-    clearSessionQueue(active.runtime.session);
-    // Settle run-scoped dialogs now, at abort-request time: pi's agent loop
-    // waits for a parked `tool_call` dialog handler before it can emit
-    // `agent_end`, so leaving settlement to the `agent_end` observer would
-    // strand the dialog until its timeout. Settling before the runtime abort
-    // also means a failing or hung abort cannot strand the parked waiter.
-    this.abortRunScopedExtensionDialogs(sessionId);
+    this.prepareAbort(active.runtime.session, sessionId);
     try {
       await this.abortSessionOperations(active.runtime.session);
       this.publishActivity(active.runtime.session, "stopped", "idle");
@@ -2828,6 +2853,48 @@ export class PiSessionService implements SessionRouteService {
     } finally {
       this.publishStatus(active.runtime.session);
     }
+  }
+
+  /**
+   * Ask a session to stop, returning as soon as the request has been *issued*.
+   *
+   * Waiting for the unwind is the caller's problem to not have: a turn can take
+   * minutes to reach a stopping point, and a request that blocks for that long
+   * holds a browser connection open the whole time. A handful of them exhausts
+   * the per-origin connection pool, at which point every other poll in the app
+   * queues behind them and the entire UI appears frozen rather than just the
+   * session being stopped.
+   *
+   * Completion is reported the way every other state change already is, through
+   * the status and activity the unwind publishes when it settles. Repeat calls
+   * while an abort is still unwinding are answered immediately and start no
+   * second unwind, so an impatient click cannot pile work up either.
+   */
+  requestAbort(ref: PiSessionRef): { aborted: true; pending: boolean } {
+    const active = this.activeForRef(ref);
+    if (active === undefined) return { aborted: true, pending: false };
+    const session = active.runtime.session;
+    const sessionId = session.sessionId;
+    if (this.abortsInFlight.has(sessionId)) return { aborted: true, pending: true };
+    this.prepareAbort(session, sessionId);
+    // Publish now so the browser sees the cleared queue and settled dialogs the
+    // moment the request lands, rather than only when the unwind completes.
+    this.publishStatus(session);
+    const unwinding = this.abortSessionOperations(session)
+      .then(() => { this.publishActivity(session, "stopped", "idle"); })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        // Reported to the browser as activity; nothing is awaiting this promise,
+        // so rethrowing here would only produce an unhandled rejection.
+        this.publishActivity(session, "stop failed", "error", message);
+        this.logger.info({ sessionId, error: message }, "session abort failed while unwinding");
+      })
+      .finally(() => {
+        this.abortsInFlight.delete(sessionId);
+        this.publishStatus(session);
+      });
+    this.abortsInFlight.set(sessionId, unwinding);
+    return { aborted: true, pending: true };
   }
 
   async stop(ref: PiSessionRef): Promise<void> {

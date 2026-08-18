@@ -90,6 +90,11 @@ export interface SessionRouteService {
   navigateTree(ref: SessionRouteRef, request: ClientSessionTreeNavigateRequest): Promise<ClientSessionTreeNavigateResult>;
   forkFromTree(ref: SessionRouteRef, request: ClientSessionTreeForkRequest): Promise<ClientSessionTreeForkResult>;
   abort(ref: SessionRouteRef): Promise<void>;
+  /**
+   * Issue an abort without waiting for the turn to unwind. `pending` reports
+   * whether an unwind is still running when the request is answered.
+   */
+  requestAbort(ref: SessionRouteRef): { aborted: true; pending: boolean };
   stop(ref: SessionRouteRef): void | Promise<void>;
   archive(ref: SessionRouteRef): Promise<void>;
   archiveTree(ref: SessionRouteRef): Promise<ClientArchiveSessionsResponse>;

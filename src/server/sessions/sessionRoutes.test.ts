@@ -1395,6 +1395,7 @@ class CapturingRouteSessionService implements SessionRouteService {
     });
   }
   abort(): never { throw unusedRouteMethod("abort"); }
+  requestAbort(): never { throw unusedRouteMethod("requestAbort"); }
   stop(): never { throw unusedRouteMethod("stop"); }
   archive(): never { throw unusedRouteMethod("archive"); }
   archiveTree(): never { throw unusedRouteMethod("archiveTree"); }

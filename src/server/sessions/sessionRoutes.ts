@@ -405,10 +405,14 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/abort`, async (request, reply) => {
+  // Answers as soon as the abort is issued. Waiting for the turn to unwind here
+  // would hold the connection for as long as the turn takes, and a few of those
+  // exhaust the browser's per-origin pool and stall the whole app; the unwind
+  // reports itself through session status and activity instead. `aborted` stays
+  // in the body so existing clients keep parsing the response unchanged.
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/abort`, (request, reply) => {
     try {
-      await sessions.abort(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
-      return { aborted: true };
+      return sessions.requestAbort(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
