@@ -76,6 +76,64 @@ describe("detectNewPrompts", () => {
     const events = detectNewPrompts(tracking, baseStatus({ sessionId: "s2", pendingAsk: ask("a1") }));
     expect(events).toEqual([{ sessionId: "s2", kind: "ask", promptId: "a1", title: "Question waiting", body: "Proceed?" }]);
   });
+
+  it("emits a done event when a streaming turn finishes without opening a prompt", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isStreaming: false }));
+    expect(events).toEqual([{ sessionId: "s1", kind: "done", promptId: "done-1", title: "pi-web is done", body: "The agent finished its turn and is waiting for you." }]);
+  });
+
+  it("emits a done event when bash finishes running", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isBashRunning: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isBashRunning: false }));
+    expect(events).toEqual([expect.objectContaining({ kind: "done" })]);
+  });
+
+  it("emits a done event when compaction finishes", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isCompacting: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isCompacting: false }));
+    expect(events).toEqual([expect.objectContaining({ kind: "done" })]);
+  });
+
+  it("does not emit a done event on the first status seen for a session", () => {
+    const tracking = createPromptTrackingState();
+    const events = detectNewPrompts(tracking, baseStatus({ isStreaming: false }));
+    expect(events).toEqual([]);
+  });
+
+  it("does not emit a done event while still busy", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isStreaming: true, isBashRunning: true }));
+    expect(events).toEqual([]);
+  });
+
+  it("does not emit a done event when the turn ends by opening a new ask", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isStreaming: false, pendingAsk: ask("a1") }));
+    expect(events).toEqual([{ sessionId: "s1", kind: "ask", promptId: "a1", title: "Question waiting", body: "Proceed?" }]);
+  });
+
+  it("does not emit a done event when the turn ends by opening a new dialog", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const events = detectNewPrompts(tracking, baseStatus({ isStreaming: false, pendingDialogs: [dialog("d1")] }));
+    expect(events).toEqual([{ sessionId: "s1", kind: "dialog", promptId: "d1", title: "Confirm", body: "An extension needs your confirmation." }]);
+  });
+
+  it("mints a distinct promptId for each successive completed turn", () => {
+    const tracking = createPromptTrackingState();
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const first = detectNewPrompts(tracking, baseStatus({ isStreaming: false }));
+    detectNewPrompts(tracking, baseStatus({ isStreaming: true }));
+    const second = detectNewPrompts(tracking, baseStatus({ isStreaming: false }));
+    expect(first[0]?.promptId).toBe("done-1");
+    expect(second[0]?.promptId).toBe("done-2");
+  });
 });
 
 describe("forgetSessionPrompts", () => {

@@ -1,10 +1,14 @@
 import type { PendingAskUser, PendingExtensionDialog, SessionStatus } from "../../shared/apiTypes";
 
-/** One newly opened prompt worth surfacing as a browser notification. */
+/** One newly opened prompt, or one completed turn, worth surfacing as a browser notification. */
 export interface PromptNotificationEvent {
   sessionId: string;
-  kind: "ask" | "dialog";
-  /** The ask id or dialog id; unique within a running daemon, used as the cross-tab dedupe key together with `sessionId`. */
+  kind: "ask" | "dialog" | "done";
+  /**
+   * The ask id, dialog id, or (for `"done"`) a synthetic per-completion id;
+   * unique within a running daemon, used as the cross-tab dedupe key together
+   * with `sessionId`.
+   */
   promptId: string;
   title: string;
   body: string;
@@ -13,6 +17,10 @@ export interface PromptNotificationEvent {
 interface SessionPromptSnapshot {
   askId: string | undefined;
   dialogIds: ReadonlySet<string>;
+  /** Whether the session was mid-turn (streaming, running bash, or compacting) as of the last status seen. */
+  wasBusy: boolean;
+  /** Count of turns completed so far, used to mint a unique `promptId` for each `"done"` event. */
+  doneCount: number;
 }
 
 /** Per-tab tracking of the prompts already seen for each session, across every machine. */
@@ -46,9 +54,18 @@ export function detectNewPrompts(tracking: PromptTrackingState, status: SessionS
     if (!previousDialogIds.has(dialog.dialogId)) events.push(dialogPromptEvent(status.sessionId, dialog));
   }
 
+  const isBusy = status.isStreaming || status.isBashRunning || status.isCompacting;
+  // Only announce a finished turn when nothing else was just opened for it to
+  // report on (a turn that ends by asking a question is already covered above).
+  const turnJustFinished = previous?.wasBusy === true && !isBusy && events.length === 0;
+  const doneCount = (previous?.doneCount ?? 0) + (turnJustFinished ? 1 : 0);
+  if (turnJustFinished) events.push(donePromptEvent(status.sessionId, doneCount));
+
   tracking.set(status.sessionId, {
     askId: nextAskId,
     dialogIds: new Set(nextDialogs.map((dialog) => dialog.dialogId)),
+    wasBusy: isBusy,
+    doneCount,
   });
   return events;
 }
@@ -80,6 +97,16 @@ function dialogPromptEvent(sessionId: string, dialog: PendingExtensionDialog): P
     promptId: dialog.dialogId,
     title: dialog.title === "" ? "Confirmation needed" : dialog.title,
     body: truncateBody(dialog.message ?? "An extension needs your confirmation."),
+  };
+}
+
+function donePromptEvent(sessionId: string, doneCount: number): PromptNotificationEvent {
+  return {
+    sessionId,
+    kind: "done",
+    promptId: `done-${String(doneCount)}`,
+    title: "pi-web is done",
+    body: "The agent finished its turn and is waiting for you.",
   };
 }
 

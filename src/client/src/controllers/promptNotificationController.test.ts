@@ -90,6 +90,28 @@ describe("PromptNotificationController", () => {
     expect(ensurePermission).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a notification when a session finishes its turn", async () => {
+    const gateway = fakeGateway();
+    const controller = new PromptNotificationController({ gateway, onActivate: vi.fn() });
+    controller.handleStatusUpdate("machine-1", baseStatus({ isStreaming: true }));
+    await flush();
+    controller.handleStatusUpdate("machine-1", baseStatus({ isStreaming: false }));
+    await flush();
+    expect(gateway.shown).toHaveLength(1);
+    expect(gateway.shown[0]?.title).toBe("pi-web is done");
+  });
+
+  it("does not show a done notification when the turn ends by opening an ask", async () => {
+    const gateway = fakeGateway();
+    const controller = new PromptNotificationController({ gateway, onActivate: vi.fn() });
+    controller.handleStatusUpdate("machine-1", baseStatus({ isStreaming: true }));
+    await flush();
+    controller.handleStatusUpdate("machine-1", baseStatus({ isStreaming: false, pendingAsk: ask("a1") }));
+    await flush();
+    expect(gateway.shown).toHaveLength(1);
+    expect(gateway.shown[0]?.title).toBe("Question waiting");
+  });
+
   it("reports gateway failures via onBackgroundError instead of throwing", async () => {
     const gateway = fakeGateway({ ensurePermission: () => Promise.reject(new Error("boom")) });
     const onBackgroundError = vi.fn();

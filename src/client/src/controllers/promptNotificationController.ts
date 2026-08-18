@@ -18,10 +18,12 @@ export interface PromptNotificationControllerDependencies {
 /**
  * Watches `status.update` events from every connected machine and shows a
  * browser notification the moment a session opens an `ask_user` question set
- * or an extension confirmation dialog. Session-scoped state (the pending
- * ask/dialog cards themselves) stays owned by {@link SessionController}; this
- * controller only tracks which prompt ids it has already announced, so it can
- * stay a thin, independently testable seam.
+ * or an extension confirmation dialog, or finishes a turn without opening
+ * either (i.e. pi-web is done and waiting for the next prompt). Session-scoped
+ * state (the pending ask/dialog cards themselves) stays owned by
+ * {@link SessionController}; this controller only tracks which prompts and
+ * turn completions it has already announced, so it can stay a thin,
+ * independently testable seam.
  */
 export class PromptNotificationController {
   private readonly gateway: BrowserNotificationGateway;
@@ -46,7 +48,7 @@ export class PromptNotificationController {
     });
   }
 
-  /** Feed one session's status; notifies for any ask or dialog opened since the last call for that session. */
+  /** Feed one session's status; notifies for any ask/dialog opened, or turn completed, since the last call for that session. */
   handleStatusUpdate(machineId: string, status: SessionStatus): void {
     if (!this.gateway.isSupported()) return;
     const events = detectNewPrompts(this.tracking, status);
