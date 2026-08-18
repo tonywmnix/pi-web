@@ -6,6 +6,7 @@ import type { CwdAttribution } from "./workspaceAttribution.js";
 const WORKING = CORE_STATUS_FLAGS.working;
 const TERMINAL = CORE_STATUS_FLAGS.terminal;
 const UNREAD = CORE_STATUS_FLAGS.unread;
+const ASK = CORE_STATUS_FLAGS.ask;
 
 describe("MachineStatusService", () => {
   it("lights the project and workspace of an active session in a project the browser never opened", async () => {
@@ -22,6 +23,56 @@ describe("MachineStatusService", () => {
       workspaces: { "workspace-1": { [WORKING]: true } },
       unattributed: {},
     });
+  });
+
+  it("lights the project and workspace of a session waiting on an answer", async () => {
+    const { service } = statusService({
+      asks: ["/srv/wt/feature"],
+      topology: { "/srv/wt/feature": { projectId: "project-1", workspaceId: "workspace-1" } },
+    });
+
+    await service.refresh();
+
+    expect(service.snapshot()).toMatchObject({
+      machine: { [ASK]: true },
+      projects: { "project-1": { [ASK]: true } },
+      workspaces: { "workspace-1": { [ASK]: true } },
+    });
+  });
+
+  it("carries both flags when a project is working and waiting at once", async () => {
+    const { service } = statusService({
+      activity: [{ cwd: "/srv/wt/a", hasSessionActivity: true, hasTerminalActivity: false }],
+      asks: ["/srv/wt/b"],
+      topology: {
+        "/srv/wt/a": { projectId: "project-1", workspaceId: "workspace-1" },
+        "/srv/wt/b": { projectId: "project-1", workspaceId: "workspace-2" },
+      },
+    });
+
+    await service.refresh();
+
+    // The project rolls up both; only the waiting workspace carries the ask.
+    expect(service.snapshot()).toMatchObject({
+      projects: { "project-1": { [WORKING]: true, [ASK]: true } },
+      workspaces: { "workspace-1": { [WORKING]: true }, "workspace-2": { [ASK]: true } },
+    });
+    expect(service.snapshot().workspaces["workspace-1"]?.[ASK]).toBeUndefined();
+  });
+
+  it("clears the ask flag once the question is answered", async () => {
+    const asks = ["/srv/wt/feature"];
+    const { service } = statusService({
+      asks,
+      topology: { "/srv/wt/feature": { projectId: "project-1", workspaceId: "workspace-1" } },
+    });
+    await service.refresh();
+    expect(service.snapshot().projects["project-1"]?.[ASK]).toBe(true);
+
+    asks.length = 0;
+    await service.refresh();
+
+    expect(service.snapshot().projects["project-1"]?.[ASK]).toBeUndefined();
   });
 
   it("lights the project of an unread session completion", async () => {
@@ -172,6 +223,7 @@ describe("MachineStatusService", () => {
 interface StatusServiceScenario {
   activity?: readonly ActiveCwdActivity[];
   unread?: readonly string[];
+  asks?: readonly string[];
   topology?: Record<string, CwdAttribution>;
 }
 
@@ -182,6 +234,7 @@ interface StatusServiceScenario {
 function statusService(scenario: StatusServiceScenario = {}) {
   const activity = scenario.activity ?? [];
   const unread = scenario.unread ?? [];
+  const asks = scenario.asks ?? [];
   const topology = scenario.topology ?? {};
   const published: MachineStatusSnapshot[] = [];
   const logger = { warn: vi.fn<(details: Record<string, unknown>, message: string) => void>() };
@@ -203,6 +256,7 @@ function statusService(scenario: StatusServiceScenario = {}) {
         return { sessions: unread.map((cwd) => ({ cwd })) };
       },
     },
+    asks: { pendingQuestionSnapshot: () => ({ sessions: asks.map((cwd) => ({ cwd })) }) },
     attribution: { attribute },
     publisher: {
       publish: (snapshot) => {

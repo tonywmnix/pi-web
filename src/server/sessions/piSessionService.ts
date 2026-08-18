@@ -1063,6 +1063,13 @@ export interface PiSessionServiceDependencies {
    */
   onUnreadChanged?: () => void;
   /**
+   * Called when some session started or stopped waiting on an answer, so the
+   * machine status projection can recompute. Fired only on an actual flip, not
+   * on every status publish, because recomputation resolves workspace
+   * attribution through provider plugins.
+   */
+  onPendingQuestionsChanged?: () => void;
+  /**
    * Lets session startup report that provider model lists are refreshing while
    * a session is being constructed. Omit to report the startup phase alone.
    */
@@ -1130,6 +1137,7 @@ export class PiSessionService implements SessionRouteService {
   private readonly catalogRefreshStatus: CatalogRefreshStatus | undefined;
   private readonly unreadPublicationRetryInitialMs: number;
   private readonly onUnreadChanged: (() => void) | undefined;
+  private readonly onPendingQuestionsChanged: (() => void) | undefined;
   private readonly pendingUnreadMutations: SessionUnreadMutation[] = [];
   private unreadPublication: Promise<void> | undefined;
   private unreadPublicationFailure: unknown;
@@ -1149,6 +1157,7 @@ export class PiSessionService implements SessionRouteService {
     this.notificationStore = deps.notificationStore ?? new SessionNotificationStore();
     this.unreadStore = deps.unreadStore ?? new SessionUnreadStore();
     this.onUnreadChanged = deps.onUnreadChanged;
+    this.onPendingQuestionsChanged = deps.onPendingQuestionsChanged;
     this.pendingAskStore = deps.pendingAskStore ?? new PendingAskStore();
     this.pendingExtensionDialogStore = deps.pendingExtensionDialogStore ?? new PendingExtensionDialogStore();
     this.extensionDialogsTimeoutMs = deps.extensionDialogsTimeoutMs ?? DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS;
@@ -1326,6 +1335,7 @@ export class PiSessionService implements SessionRouteService {
       this.forgetUnreadActivity(active.runtime.session);
       this.pendingAskStore.forgetSession(active.runtime.session.sessionId);
       this.endSessionExtensionDialogs(active.runtime.session.sessionId);
+      this.forgetPendingQuestion(active.runtime.session.sessionId);
     }
     this.active.clear();
     this.pendingSessionOpens.clear();
@@ -2975,6 +2985,7 @@ export class PiSessionService implements SessionRouteService {
     // An open ask is meaningful only while the runtime that posted it exists: no
     // one is left to receive the answers, so it is dropped without an outcome.
     this.pendingAskStore.forgetSession(sessionId);
+    this.forgetPendingQuestion(sessionId);
     // Open dialogs share that stance, but their extension waiters are parked
     // Promises inside the dying runtime: settle them rather than dropping them.
     this.endSessionExtensionDialogs(sessionId);
@@ -3885,6 +3896,41 @@ export class PiSessionService implements SessionRouteService {
     this.events.publish(session.sessionId, { type: "status.update", status });
     this.events.publishGlobal({ type: "status.update", status });
     this.observeUnreadActivityState(session);
+    this.observePendingQuestionState(session, status);
+  }
+
+  /**
+   * cwds of sessions holding a question nobody has answered yet, for the machine
+   * status projection. Every ask and dialog transition funnels through
+   * {@link publishStatus}, so this set is current without the store being polled.
+   */
+  pendingQuestionSnapshot(): { sessions: readonly { cwd: string }[] } {
+    return { sessions: [...this.pendingQuestionCwdBySessionId.values()].map((cwd) => ({ cwd })) };
+  }
+
+  /**
+   * Track whether this session is blocked on the user, notifying only when the
+   * answer changes. Status publishes on every streamed token, so notifying
+   * unconditionally would re-resolve workspace attribution continuously.
+   */
+  private observePendingQuestionState(session: PiAgentSession, status: ClientSessionStatus): void {
+    const waiting = status.pendingAsk !== undefined || (status.pendingDialogs ?? []).length > 0;
+    const cwd = session.sessionManager.getCwd();
+    const previous = this.pendingQuestionCwdBySessionId.get(session.sessionId);
+    if (waiting) {
+      if (previous === cwd) return;
+      this.pendingQuestionCwdBySessionId.set(session.sessionId, cwd);
+    } else {
+      if (previous === undefined) return;
+      this.pendingQuestionCwdBySessionId.delete(session.sessionId);
+    }
+    this.onPendingQuestionsChanged?.();
+  }
+
+  /** Drop a session's blocked-on-you state when its runtime goes away. */
+  private forgetPendingQuestion(sessionId: string): void {
+    if (!this.pendingQuestionCwdBySessionId.delete(sessionId)) return;
+    this.onPendingQuestionsChanged?.();
   }
 
   private clearStaleActiveActivity(session: PiAgentSession): void {

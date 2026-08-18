@@ -3,9 +3,13 @@ import { CORE_STATUS_FLAGS, type StatusFlags } from "../../../shared/machineStat
 
 /**
  * Work signals a row can show. At most one kind renders at a time; call sites
- * resolve precedence (sending > session > terminal) before rendering.
+ * resolve precedence (ask > sending > session > terminal) before rendering.
+ *
+ * "ask" is not work — it means the row is blocked waiting on the user. It wins
+ * the slot because a row that is both working and waiting still needs an
+ * answer before anything else happens.
  */
-export type ActivityIndicatorKind = "session" | "terminal" | "sending";
+export type ActivityIndicatorKind = "ask" | "session" | "terminal" | "sending";
 
 /**
  * Render the single indicator mark for a row.
@@ -38,10 +42,16 @@ export function renderActivityIndicator(kind: ActivityIndicatorKind | undefined,
  */
 export function statusActivityKind(flags: StatusFlags | undefined): ActivityIndicatorKind | undefined {
   if (flags === undefined) return undefined;
+  if (flags[CORE_STATUS_FLAGS.ask] === true) return "ask";
   if (flags[CORE_STATUS_FLAGS.working] === true) return "session";
   if (flags[CORE_STATUS_FLAGS.terminal] === true) return "terminal";
   const hasOtherFlag = Object.entries(flags).some(([flagId, isSet]) => isSet && flagId !== CORE_STATUS_FLAGS.unread);
   return hasOtherFlag ? "session" : undefined;
+}
+
+/** Whether a status node has a question waiting on the user below it. */
+export function hasStatusAsk(flags: StatusFlags | undefined): boolean {
+  return flags?.[CORE_STATUS_FLAGS.ask] === true;
 }
 
 /** Whether a status node carries unread work below it. */

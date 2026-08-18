@@ -19,6 +19,8 @@ export interface SessionServiceDependencyInput {
   unreadStore: NonNullable<PiSessionServiceDependencies["unreadStore"]>;
   /** Notifies the machine status projection that unread state changed. */
   onUnreadChanged: NonNullable<PiSessionServiceDependencies["onUnreadChanged"]>;
+  /** Notifies the machine status projection that a session started or stopped waiting on an answer. */
+  onPendingQuestionsChanged: NonNullable<PiSessionServiceDependencies["onPendingQuestionsChanged"]>;
   /** Read-only view of the background refresher; see the assembly below. */
   catalogRefreshStatus: NonNullable<PiSessionServiceDependencies["catalogRefreshStatus"]>;
   /** Omitted when the operator has not enabled session spawning. */
@@ -60,6 +62,7 @@ export function sessionServiceDependencies(input: SessionServiceDependencyInput)
     notificationStore: input.notificationStore,
     unreadStore: input.unreadStore,
     onUnreadChanged: input.onUnreadChanged,
+    onPendingQuestionsChanged: input.onPendingQuestionsChanged,
     // Read-only, so session startup can tell a waiting user that provider
     // model lists are refreshing at the same time.
     catalogRefreshStatus: input.catalogRefreshStatus,

@@ -27,6 +27,11 @@ interface MachineStatusUnreadSource {
   catalogSnapshot(): { sessions: readonly { cwd: string }[] };
 }
 
+/** Sessions blocked on an unanswered question, read for their cwds only. */
+interface MachineStatusAskSource {
+  pendingQuestionSnapshot(): { sessions: readonly { cwd: string }[] };
+}
+
 interface MachineStatusPublisher {
   publish(snapshot: MachineStatusSnapshot): void;
 }
@@ -38,6 +43,11 @@ interface MachineStatusLogger {
 export interface MachineStatusServiceDependencies {
   activity: MachineStatusActivitySource;
   unread: MachineStatusUnreadSource;
+  /**
+   * Optional so a daemon that has not wired sessions yet still projects status;
+   * an absent source simply never sets the flag.
+   */
+  asks?: MachineStatusAskSource;
   attribution: Pick<WorkspaceAttribution, "attribute">;
   publisher: MachineStatusPublisher;
   logger: MachineStatusLogger;
@@ -186,6 +196,9 @@ export class MachineStatusService {
     }
     for (const session of this.dependencies.unread.catalogSnapshot().sessions) {
       setFlag(session.cwd, CORE_STATUS_FLAGS.unread);
+    }
+    for (const session of this.dependencies.asks?.pendingQuestionSnapshot().sessions ?? []) {
+      setFlag(session.cwd, CORE_STATUS_FLAGS.ask);
     }
     return flagsByCwd;
   }

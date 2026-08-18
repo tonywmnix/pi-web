@@ -283,10 +283,10 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
     const canDeleteTransient = isTransientNewSessionInfo(session, status);
     return html`
       <div
-        class="action-row ${this.selected?.id === session.id ? "selected" : ""} ${bulkSelected ? "bulk-selected" : ""} ${session.archived === true ? "archived" : ""} ${selectionActive ? "selecting" : ""} ${unread ? "unread" : ""}"
+        class="action-row ${this.selected?.id === session.id ? "selected" : ""} ${bulkSelected ? "bulk-selected" : ""} ${session.archived === true ? "archived" : ""} ${selectionActive ? "selecting" : ""} ${unread ? "unread" : ""} ${indicatorKind === "ask" ? "awaiting-answer" : ""}"
         style=${`--depth:${String(cappedDepth)}`}
         tabindex="0"
-        title=${session.path}
+        title=${indicatorKind === "ask" ? `${session.path} \u2014 waiting for your answer` : session.path}
         @click=${(event: MouseEvent) => { activateSelectableRow(event, () => { this.activateSessionRow(session, scope); }); }}
         @keydown=${(event: KeyboardEvent) => { this.handleSessionKeydown(event, session, scope); }}
       >
@@ -471,7 +471,7 @@ export class SessionList extends LitElement implements KeyboardNavigableSection 
   }
 
   private renderActivity(kind: ActivityIndicatorKind | undefined, unread: boolean) {
-    const label = kind === "sending" ? "Sending message" : "Session active";
+    const label = activityKindLabel(kind);
     return renderActionActivityIndicator(kind, label, unread ? "Unread session activity" : undefined);
   }
 
@@ -555,6 +555,10 @@ function unarchivedDescendantCounts(sessions: SessionInfo[]): Map<string, number
  * Resolve the activity indicator kind for a session row, or undefined when the
  * row should show no work dot. Pure so it can be unit-tested without rendering.
  *
+ * "ask" (the session posted a question and is blocked on the user) outranks
+ * everything: the row cannot progress until someone answers, and that is the
+ * one state the user has to act on.
+ *
  * "sending" (client-side upload in flight) is reported with its own kind, and
  * takes precedence over server activity, so it can be colored distinctly to
  * signal that it is not yet propagated to workspace/machine activity. Unread
@@ -568,9 +572,25 @@ export function sessionRowActivityKind(
   sending: boolean,
 ): ActivityIndicatorKind | undefined {
   if (isCachedNewSessionInfo(session) || session.archived === true) return undefined;
+  if (sessionRowAwaitingAnswer(status)) return "ask";
   if (sending) return "sending";
   if (isSessionActive(status, activity)) return "session";
   return undefined;
+}
+
+/**
+ * Whether the session posted a question that is still unanswered, from either
+ * the `ask_user` tool or an extension confirm/select/input dialog.
+ */
+export function sessionRowAwaitingAnswer(status: SessionStatus | undefined): boolean {
+  if (status === undefined) return false;
+  return status.pendingAsk !== undefined || (status.pendingDialogs ?? []).length > 0;
+}
+
+function activityKindLabel(kind: ActivityIndicatorKind | undefined): string {
+  if (kind === "ask") return "Waiting for your answer";
+  if (kind === "sending") return "Sending message";
+  return "Session active";
 }
 
 /**

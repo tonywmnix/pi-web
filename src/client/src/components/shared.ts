@@ -252,6 +252,24 @@ export const listStyles = css`
   .action-name { display: -webkit-box; max-height: 2.5em; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .action-row:not(.selected):hover .action-main { background: var(--pi-surface-hover); }
   .workspace-row .action-main { border-radius: 8px 0 0 8px; }
+  /*
+   * Blocked on the user: tint the whole pill, not just a dot, so a waiting row is
+   * unmissable while scanning. Declared after the base/selected/hover rules above
+   * so it wins at equal specificity, and the warning hue is mixed into the theme
+   * surface rather than used flat so row text keeps its contrast in both themes.
+   */
+  .action-row.awaiting-answer .action-main, .action-row.awaiting-answer .action-menu-toggle {
+    border-color: var(--pi-warning);
+    background: color-mix(in srgb, var(--pi-warning) 22%, var(--pi-surface));
+  }
+  .action-row.awaiting-answer:not(.selected):hover .action-main, .action-row.awaiting-answer:not(.selected):hover .action-menu-toggle {
+    background: color-mix(in srgb, var(--pi-warning) 32%, var(--pi-surface));
+  }
+  .action-row.awaiting-answer.selected .action-main, .action-row.awaiting-answer.selected .action-menu-toggle {
+    border-color: var(--pi-accent);
+    background: color-mix(in srgb, var(--pi-warning) 40%, var(--pi-surface));
+  }
+  .action-row.awaiting-answer .action-name, .action-row.awaiting-answer .workspace-primary-label { font-weight: 600; }
   .workspace-primary { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
   .workspace-primary-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workspace-status { flex: 0 0 auto; color: var(--pi-warning); font-size: 12px; }
@@ -275,6 +293,26 @@ export const listStyles = css`
   .activity-indicator.terminal { border-radius: 2px; background: var(--pi-accent); }
   /* Client-side sending (upload in flight); distinct from server activity, which propagates to workspace/machine rows. */
   .activity-indicator.sending { border-radius: 50%; background: var(--pi-warning); }
+  /*
+   * Blocked on the user. Larger, warning-colored, and pulsing with a halo so it
+   * reads as "act on me" rather than "busy", and stays distinguishable from the
+   * green work dot at a glance down a long list.
+   */
+  .activity-indicator.ask {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--pi-warning);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--pi-warning) 30%, transparent);
+    animation: ask-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes ask-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--pi-warning) 35%, transparent); }
+    50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--pi-warning) 12%, transparent); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .activity-indicator.ask { animation: none; }
+  }
   /* Unread is a stable state, not ongoing work: keep it static and accent-colored. */
   .activity-indicator.unread { border-radius: 50%; background: var(--pi-accent); animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--pi-accent) 20%, transparent); }
   /* Unread + ongoing work: a static accent ring wraps the still-pulsing work dot. */

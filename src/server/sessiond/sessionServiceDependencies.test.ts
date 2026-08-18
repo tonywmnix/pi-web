@@ -24,6 +24,7 @@ function daemonCollaborators(patch: Partial<SessionServiceDependencyInput> = {})
     notificationStore: new SessionNotificationStore(),
     unreadStore: new SessionUnreadStore(),
     onUnreadChanged: () => { /* no-op */ },
+    onPendingQuestionsChanged: () => { /* no-op */ },
     catalogRefreshStatus: { isRefreshInFlight: () => false },
     subsessionsEnabled: false,
     askUserEnabled: true,

@@ -207,9 +207,15 @@ async function createSessionDaemonRuntime() {
       workspaces: workspaceProviders,
       logger: app.log,
     });
+    // Sessions are constructed after the projection, and the startup
+    // `notifyChanged()` below runs before that, so the ask source is read
+    // through a holder rather than captured directly: touching `sessions` in
+    // this closure would be a temporal dead zone error on that first pass.
+    const pendingQuestions: { source?: { pendingQuestionSnapshot(): { sessions: readonly { cwd: string }[] } } } = {};
     const machineStatus = new MachineStatusService({
       activity: workspaceActivity,
       unread: unreadStore,
+      asks: { pendingQuestionSnapshot: () => pendingQuestions.source?.pendingQuestionSnapshot() ?? { sessions: [] } },
       attribution: statusAttribution,
       publisher: { publish: (snapshot) => { eventHub.publishRealtime({ type: "machine.status", status: snapshot }); } },
       logger: app.log,
@@ -253,12 +259,14 @@ async function createSessionDaemonRuntime() {
       notificationStore,
       unreadStore,
       onUnreadChanged: () => { machineStatus.notifyChanged(); },
+      onPendingQuestionsChanged: () => { machineStatus.notifyChanged(); },
       catalogRefreshStatus: catalogRefresher,
       sessionManager: createPiSessionManagerGateway({
         agentDir: activeAgentProfile.dir,
         env: daemonEnvironment,
       }),
     }));
+    pendingQuestions.source = sessions;
     auth.subscribe((change) => { sessions.applyAuthChange(change); });
     const terminals = new TerminalService(eventHub, workspaceActivity);
     const workspaceRemovals = new WorkspaceRemovalService(workspaceProviders, terminals);

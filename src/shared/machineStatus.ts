@@ -60,6 +60,14 @@ export const CORE_STATUS_FLAGS = {
   terminal: "core:terminal",
   /** An unread session completion in the subtree. */
   unread: "core:unread",
+  /**
+   * A session in the subtree posted a question (`ask_user` or an extension
+   * confirm/select/input dialog) that nobody has answered yet. This is a
+   * blocked-on-you signal, not work in progress: the session makes no further
+   * progress until someone replies, so it outranks `working` when a row picks
+   * the one mark it renders.
+   */
+  ask: "core:ask",
 } as const;
 
 /**
