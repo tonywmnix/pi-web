@@ -12,6 +12,7 @@ import { MachineController } from "../controllers/machineController";
 import { MachineStatusController } from "../controllers/machineStatusController";
 import { ProjectController, type ProjectTrustChoice } from "../controllers/projectController";
 import { PiWebStatusController } from "../controllers/piWebStatusController";
+import { PromptNotificationController } from "../controllers/promptNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
 import { WorkspaceController } from "../controllers/workspaceController";
@@ -130,6 +131,10 @@ export class PiWebApp extends LitElement {
     (patch) => { this.setState(patch); },
     { onBackgroundError: (message, error) => { console.warn(message, error); } },
   );
+  private readonly promptNotifications = new PromptNotificationController({
+    onActivate: ({ machineId, sessionId }) => { this.focusSessionFromNotification(machineId, sessionId); },
+    onBackgroundError: (message, error) => { console.warn(message, error); },
+  });
   private readonly sessions = new SessionController(
     () => this.state,
     (patch) => { this.setState(patch); },
@@ -333,6 +338,7 @@ export class PiWebApp extends LitElement {
     window.addEventListener("keydown", this.onKeyDown, GLOBAL_SHORTCUT_LISTENER_OPTIONS);
     this.systemLightThemeMedia?.addEventListener("change", this.onSystemLightThemeChange);
     this.applyPreferredTheme(false);
+    this.promptNotifications.ensurePermissionRequested();
     this.connectRealtime();
     this.syncSessionUnreadMachines();
     this.piWebStatusTimer = window.setInterval(() => { this.schedulePiWebStatusRefresh(); }, PI_WEB_STATUS_REFRESH_MS);
@@ -967,6 +973,7 @@ export class PiWebApp extends LitElement {
   private handleMachineActivityEvent(machineId: string, event: BrowserRealtimeEvent): void {
     if (event.type === "sessions.unread") this.sessionUnread.applyEvent(machineId, event);
     else if (event.type === "machine.status") this.machineStatus.apply(machineId, event.status);
+    else if (event.type === "status.update") this.promptNotifications.handleStatusUpdate(machineId, event.status);
   }
 
   private handleRealtimeEvent(machineId: string, event: BrowserRealtimeEvent): void {
@@ -975,7 +982,28 @@ export class PiWebApp extends LitElement {
     else if (isTerminalEvent(event)) {
       this.applyTerminalEvent(event);
       if (event.type === "terminal.exited") void this.refreshWorkspaceDeletionRuns();
-    } else this.sessions.applyGlobalEvent(event);
+    } else {
+      if (event.type === "status.update") this.promptNotifications.handleStatusUpdate(machineId, event.status);
+      this.sessions.applyGlobalEvent(event);
+    }
+  }
+
+  /**
+   * Best-effort navigation from a clicked prompt notification. Session lists
+   * are worktree-scoped (see {@link SessionController}), so a session outside
+   * the currently open workspace cannot be resolved to a workspace/project
+   * without a dedicated lookup; in that case this only switches machines.
+   */
+  private focusSessionFromNotification(machineId: string, sessionId: string): void {
+    const alreadySelectedMachine = selectedMachineId(this.state) === machineId;
+    if (alreadySelectedMachine) {
+      const knownSession = this.state.sessions.find((session) => session.id === sessionId);
+      if (knownSession !== undefined) void this.sessions.selectSession(knownSession);
+      return;
+    }
+    const machine = this.state.machines.find((candidate) => candidate.id === machineId);
+    if (machine === undefined) return;
+    void this.machines.selectMachine(machine);
   }
 
   private applyTerminalEvent(event: TerminalUiEvent): void {
