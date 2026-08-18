@@ -89,6 +89,15 @@ export interface Machine {
   id: string;
   name: string;
   kind: MachineKind;
+  /**
+   * The host the machine actually runs on, when it can be known.
+   *
+   * Distinct from `name`, which is a label the user chose and which is a fixed
+   * "Local" for the gateway's own machine - the one case where the display name
+   * identifies nothing. Only populated for the local machine, since a remote is
+   * known to this gateway solely by the name and URL it was added under.
+   */
+  hostname?: string;
   baseUrl?: string;
   createdAt: string;
   updatedAt: string;

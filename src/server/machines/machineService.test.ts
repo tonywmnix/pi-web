@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebRuntimeResponse } from "../../shared/apiTypes.js";
 import type { MachineClient } from "./machineClient.js";
@@ -24,9 +24,18 @@ afterEach(async () => {
 describe("MachineService", () => {
   it("synthesizes local machine without persisting it", async () => {
     expect(await service.list()).toEqual([
-      { id: "local", name: "Local", kind: "local", createdAt: "1970-01-01T00:00:00.000Z", updatedAt: "1970-01-01T00:00:00.000Z" },
+      { id: "local", name: "Local", kind: "local", hostname: hostname(), createdAt: "1970-01-01T00:00:00.000Z", updatedAt: "1970-01-01T00:00:00.000Z" },
     ]);
     await expect(stat(storePath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports the host it runs on, which the name never does", async () => {
+    // "Local" is fixed, so this is the only field that says which machine a
+    // gateway actually is - the thing a notification has to name.
+    const [local] = await service.list();
+
+    expect(local?.name).toBe("Local");
+    expect(local?.hostname).toBe(hostname());
   });
 
   it("adds remote machines and omits secrets from public responses", async () => {

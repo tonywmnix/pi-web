@@ -106,6 +106,37 @@ export interface AgentNotificationInput {
   kind: AgentNotificationKind;
   sessionId: string;
   sessionLabel: string;
+  /** Host the session runs on, when the gateway knows more than one. */
+  machineLabel?: string | undefined;
+}
+
+/**
+ * Lead with the host, then the session.
+ *
+ * A gateway can front several machines at once, and the same agent finishing on
+ * a laptop and on a dev box produces notifications that are otherwise
+ * indistinguishable. The host goes first because a long session name is what
+ * gets truncated, and the answer to "which machine" is the part that stops
+ * being guessable.
+ */
+/**
+ * How to name a machine in a notification.
+ *
+ * Prefers the host it reports over the display name, because the gateway's own
+ * machine is always labelled "Local" - true from the browser's point of view
+ * and useless in a notification that could have come from either end of a
+ * tunnel. A remote reports no host, so its user-chosen name is the best there
+ * is, and that name is already how the user refers to it.
+ */
+export function machineNotificationLabel(machine: { name: string; hostname?: string } | undefined): string | undefined {
+  if (machine === undefined) return undefined;
+  const hostname = machine.hostname?.trim() ?? "";
+  return hostname === "" ? machine.name : hostname;
+}
+
+export function notificationBody(input: AgentNotificationInput): string {
+  const machine = input.machineLabel?.trim() ?? "";
+  return machine === "" ? input.sessionLabel : `${machine} \u00B7 ${input.sessionLabel}`;
 }
 
 /**
@@ -124,7 +155,7 @@ export function showAgentNotification(input: AgentNotificationInput): boolean {
   if (!shouldShowNotification(gate)) return false;
   try {
     const notification = new Notification(notificationTitle(input.kind), {
-      body: input.sessionLabel,
+      body: notificationBody(input),
       // Tagged per session and kind so a session that finishes twice replaces
       // its own notification instead of stacking a column of them.
       tag: `pi-web:${input.kind}:${input.sessionId}`,

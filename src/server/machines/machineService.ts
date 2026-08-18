@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import type { Machine, MachineHealth, MachineRuntime, PiWebComponentStatus, PiWebDeprecatedAgentInput, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebStatusResponse } from "../../shared/apiTypes.js";
 import { parsePiWebRuntimeResponse } from "../../shared/piWebStatusParsing.js";
 import { getPiWebRuntime } from "../piWebStatus.js";
@@ -169,7 +170,25 @@ export class MachineService {
 }
 
 export function localMachine(): Machine {
-  return { id: "local", name: "Local", kind: "local", createdAt: LOCAL_MACHINE_TIMESTAMP, updatedAt: LOCAL_MACHINE_TIMESTAMP };
+  const host = localHostname();
+  // Spread rather than assign undefined: this is a wire type, where a host the
+  // platform will not name is an absent key, not a null one.
+  return { id: "local", name: "Local", kind: "local", ...(host === undefined ? {} : { hostname: host }), createdAt: LOCAL_MACHINE_TIMESTAMP, updatedAt: LOCAL_MACHINE_TIMESTAMP };
+}
+
+/**
+ * The host this gateway runs on, or undefined if the platform will not say.
+ *
+ * Every caller treats this as decoration, so a machine that cannot name itself
+ * falls back to the display name rather than surfacing an error.
+ */
+export function localHostname(): string | undefined {
+  try {
+    const name = hostname().trim();
+    return name === "" ? undefined : name;
+  } catch {
+    return undefined;
+  }
 }
 
 function publicMachine(machine: StoredMachine): Machine {

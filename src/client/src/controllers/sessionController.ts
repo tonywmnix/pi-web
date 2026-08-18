@@ -9,7 +9,7 @@ import { clearAskDraft } from "../askDrafts";
 import { AskAttentionTracker } from "../askAttention";
 import { playAskChime } from "../askSound";
 import { SessionDoneTracker } from "../agentDone";
-import { showAgentNotification, type AgentNotificationKind } from "../agentNotifications";
+import { machineNotificationLabel, showAgentNotification, type AgentNotificationKind } from "../agentNotifications";
 import { ChatTranscriptStore } from "../chatTranscriptStore";
 import { isShellInput } from "../inputModes";
 import { fileCompletionInsertText } from "../promptCompletions";
@@ -60,7 +60,7 @@ export interface SessionControllerDependencies {
   /** Audible alert for a session that starts waiting on an answer; injected so tests stay silent. */
   playAskSound?: () => void;
   /** Desktop notification for a question or a finished run; injected so tests raise nothing. */
-  notifyAgentEvent?: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string) => void;
+  notifyAgentEvent?: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string, machineLabel: string | undefined) => void;
   transcripts?: ChatTranscriptStore;
   notifications?: SessionNotificationSessionBridge;
   replacePromptEditorText?: (replacement: PromptEditorTextReplacement) => void | Promise<void>;
@@ -137,7 +137,7 @@ export class SessionController {
   private readonly askAttention = new AskAttentionTracker();
   private readonly sessionDone = new SessionDoneTracker();
   private readonly playAskSound: () => void;
-  private readonly notifyAgentEvent: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string) => void;
+  private readonly notifyAgentEvent: (kind: AgentNotificationKind, sessionId: string, sessionLabel: string, machineLabel: string | undefined) => void;
 
   constructor(
     private readonly getState: GetState,
@@ -151,7 +151,7 @@ export class SessionController {
     this.transcripts = deps.transcripts ?? new ChatTranscriptStore();
     this.playAskSound = deps.playAskSound ?? playAskChime;
     this.notifyAgentEvent = deps.notifyAgentEvent
-      ?? ((kind, sessionId, sessionLabel) => { showAgentNotification({ kind, sessionId, sessionLabel }); });
+      ?? ((kind, sessionId, sessionLabel, machineLabel) => { showAgentNotification({ kind, sessionId, sessionLabel, machineLabel }); });
     this.notifications = deps.notifications;
     this.replacePromptEditorText = deps.replacePromptEditorText;
     this.onSelectedSessionReady = deps.onSelectedSessionReady;
@@ -175,10 +175,21 @@ export class SessionController {
     else if (event.type === "session.startup") this.queueStartupProgress(event);
   }
 
-  /** Name the session in the notification body; the id alone means nothing to a reader. */
+  /**
+   * Name the session in the notification body; the id alone means nothing to a
+   * reader. Name the machine too: these events arrive over the selected
+   * machine's stream, so that is the host the run is on, and a gateway fronting
+   * more than one leaves no other way to tell them apart.
+   */
   private alert(kind: AgentNotificationKind, sessionId: string): void {
-    const session = this.getState().sessions.find((candidate) => candidate.id === sessionId);
-    this.notifyAgentEvent(kind, sessionId, session === undefined ? shortSessionId(sessionId) : sessionLabel(session));
+    const state = this.getState();
+    const session = state.sessions.find((candidate) => candidate.id === sessionId);
+    this.notifyAgentEvent(
+      kind,
+      sessionId,
+      session === undefined ? shortSessionId(sessionId) : sessionLabel(session),
+      machineNotificationLabel(state.selectedMachine),
+    );
   }
 
   dispose() {

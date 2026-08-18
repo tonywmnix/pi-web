@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   areNotificationsEnabled,
   isPageInForeground,
+  machineNotificationLabel,
+  notificationBody,
   notificationGuidance,
   notificationTitle,
   setNotificationsEnabled,
@@ -83,6 +85,36 @@ describe("notificationTitle", () => {
   it("distinguishes a question from a finished run", () => {
     expect(notificationTitle("question")).toBe("Waiting for your answer");
     expect(notificationTitle("done")).toBe("Agent finished");
+  });
+});
+
+describe("notificationBody", () => {
+  const base = { kind: "done", sessionId: "s1", sessionLabel: "Fix the parser" } as const;
+
+  it("leads with the machine so it survives truncation", () => {
+    expect(notificationBody({ ...base, machineLabel: "build-box" })).toBe("build-box \u00B7 Fix the parser");
+  });
+
+  it("falls back to the session alone when no machine is known", () => {
+    expect(notificationBody(base)).toBe("Fix the parser");
+    expect(notificationBody({ ...base, machineLabel: "   " })).toBe("Fix the parser");
+  });
+});
+
+describe("machineNotificationLabel", () => {
+  it("prefers the reported host over the display name", () => {
+    // "Local" is what the gateway calls itself, which is exactly the case a
+    // notification cannot afford to be vague about.
+    expect(machineNotificationLabel({ name: "Local", hostname: "workstation" })).toBe("workstation");
+  });
+
+  it("uses the chosen name for a remote that reports no host", () => {
+    expect(machineNotificationLabel({ name: "Build box" })).toBe("Build box");
+    expect(machineNotificationLabel({ name: "Spare", hostname: "  " })).toBe("Spare");
+  });
+
+  it("names nothing when there is no machine", () => {
+    expect(machineNotificationLabel(undefined)).toBeUndefined();
   });
 });
 
