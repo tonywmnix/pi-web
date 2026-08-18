@@ -1025,13 +1025,32 @@ export class SessionController {
     }
   }
 
+  /**
+   * Request that the session stop its current work.
+   *
+   * Deduplicated per session: the daemon answers an abort only once the turn has
+   * finished unwinding, which on a stalled model stream is bounded by the
+   * provider timeout rather than by anything local. Without this guard each
+   * further click opens another request that also parks, and a handful of them
+   * exhausts the browser's per-origin connection pool - at which point every
+   * other poll and fetch in the app queues behind them and the whole UI looks
+   * frozen, not just this session.
+   */
   async stopActiveWork() {
     const session = this.getState().selectedSession;
     if (!session) return;
+    if (this.getState().stoppingSessions[session.id] === true) return;
+    this.setState({ stoppingSessions: { ...this.getState().stoppingSessions, [session.id]: true } });
     try {
       await this.api.abort(session, selectedMachineId(this.getState()));
     } catch (error) {
       this.setState({ error: String(error) });
+    } finally {
+      const remaining: Record<string, true> = {};
+      for (const [id, inFlight] of Object.entries(this.getState().stoppingSessions)) {
+        if (id !== session.id) remaining[id] = inFlight;
+      }
+      this.setState({ stoppingSessions: remaining });
     }
   }
 

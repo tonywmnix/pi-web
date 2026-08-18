@@ -32,6 +32,8 @@ export class PromptEditor extends LitElement {
   @property({ type: Boolean }) canSteer = false;
   @property({ type: Boolean }) isCompacting = false;
   @property({ type: Boolean }) canStop = false;
+  /** A stop request is already in flight; further clicks are suppressed until it answers. */
+  @property({ type: Boolean }) stopping = false;
   @property({ attribute: false }) status?: SessionStatus;
   @property({ type: Boolean }) sending = false;
   @property({ attribute: false }) onSend?: (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery) => void | Promise<void>;
@@ -121,7 +123,7 @@ export class PromptEditor extends LitElement {
           ${this.renderCompactStatus()}
           <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
           ${this.canSteer && !this.isCompacting ? html`<button class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
-          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work and clear queued messages" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
+          <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop || this.stopping} title=${this.stopping ? "Stopping… waiting for the current turn to unwind" : this.canStop ? "Stop current work and clear queued messages" : "Nothing running"} aria-label=${this.stopping ? "Stopping" : "Stop current work"} @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
         </div>
       </footer>
     `;

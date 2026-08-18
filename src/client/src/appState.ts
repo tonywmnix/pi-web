@@ -23,6 +23,13 @@ export interface AppState {
   isLoadingEarlierMessages: boolean;
   /** Sessions with a prompt upload in flight, keyed by sessionId (client-owned). */
   sendingPrompts: Record<string, true>;
+  /**
+   * Sessions with a stop request in flight. The daemon's abort only answers once
+   * the turn has actually unwound, which can take minutes on a wedged model
+   * stream, so the button is held closed instead of letting each further click
+   * open another long-lived request.
+   */
+  stoppingSessions: Record<string, true>;
   /** Client-side queued sends waiting for a just-created backend session, keyed by sessionId. */
   clientQueuedSessionMessages: Record<string, QueuedSessionMessage[]>;
   /** Client-initiated session creation requests waiting for the server. */
@@ -153,6 +160,7 @@ export function initialAppState(): AppState {
     messagePageTotal: 0,
     isLoadingEarlierMessages: false,
     sendingPrompts: {},
+    stoppingSessions: {},
     clientQueuedSessionMessages: {},
     startingSessionCount: 0,
     isLoadingProjects: false,
