@@ -69,6 +69,17 @@ function registerLocalProjectRoutes(app: FastifyInstance, projects: ProjectServi
     }
   });
 
+  app.put<{ Params: { projectId: string }; Body: { color?: string | null } | null }>(`${prefix}/projects/:projectId`, async (request, reply) => {
+    const color = request.body === null ? undefined : request.body.color;
+    if (color !== undefined && color !== null && typeof color !== "string") return reply.code(400).send({ error: "Project color must be a string or null" });
+    try {
+      return await projects.setColor(request.params.projectId, color === null ? undefined : color);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return reply.code(message === "Project not found" ? 404 : 400).send({ error: message });
+    }
+  });
+
   app.delete<{ Params: { projectId: string } }>(`${prefix}/projects/:projectId`, async (request, reply) => {
     try {
       await projects.close(request.params.projectId);

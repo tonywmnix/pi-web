@@ -23,6 +23,12 @@ export class ProjectService {
     if (!(await this.store.remove(id))) throw new Error("Project not found");
   }
 
+  async setColor(id: string, color: string | undefined): Promise<Project> {
+    const updated = await this.store.setColor(id, color);
+    if (!updated) throw new Error("Project not found");
+    return updated;
+  }
+
   async requireProject(id: string): Promise<Project> {
     const project = await this.store.get(id);
     if (!project) throw new Error("Project not found");

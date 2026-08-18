@@ -137,7 +137,13 @@ function optionalMachineStatus(record: Record<string, unknown>, key: string): Ma
 
 export function parseProject(value: unknown): Project {
   const record = requireRecord(value);
-  return { id: requireString(record, "id"), name: requireString(record, "name"), path: requireString(record, "path"), createdAt: requireString(record, "createdAt") };
+  return {
+    id: requireString(record, "id"),
+    name: requireString(record, "name"),
+    path: requireString(record, "path"),
+    createdAt: requireString(record, "createdAt"),
+    ...optionalField("color", optionalString(record, "color")),
+  };
 }
 
 export function parseWorkspace(value: unknown): Workspace {

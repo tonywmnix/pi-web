@@ -337,6 +337,8 @@ export interface Project {
   name: string;
   path: string;
   createdAt: string;
+  /** Optional user-chosen accent colour as a `#rrggbb` string; absent means the default surface colour. */
+  color?: string;
 }
 
 export interface WorkspaceEffectiveConfig {

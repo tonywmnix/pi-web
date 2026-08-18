@@ -13,11 +13,11 @@ export interface ProjectTrustChoice {
 }
 
 export interface ProjectControllerDependencies {
-  api?: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust">;
+  api?: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor">;
 }
 
 export class ProjectController {
-  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust">;
+  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor">;
 
   constructor(
     private readonly getState: GetState,
@@ -71,6 +71,22 @@ export class ProjectController {
     const mainWorkspace = this.getState().workspaces.find((workspace) => workspace.isMain);
     if (mainWorkspace === undefined) return;
     await this.api.setWorkspaceTrust(project.id, mainWorkspace.id, trusted, machineId);
+  }
+
+  /** Persists the project's accent colour, keeping the selected project in sync so the header recolours too. */
+  async setProjectColor(projectId: string, color: string | undefined) {
+    const machineId = selectedMachineId(this.getState());
+    try {
+      const updated = await this.api.setProjectColor(projectId, color, machineId);
+      if (selectedMachineId(this.getState()) !== machineId) return;
+      const state = this.getState();
+      this.setState({
+        projects: state.projects.map((p) => (p.id === projectId ? updated : p)),
+        ...(state.selectedProject?.id === projectId ? { selectedProject: updated } : {}),
+      });
+    } catch (error) {
+      if (selectedMachineId(this.getState()) === machineId) this.setState({ error: String(error) });
+    }
   }
 
   async closeProject(projectId: string) {

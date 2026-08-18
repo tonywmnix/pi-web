@@ -47,6 +47,44 @@ describe("buildApp project routes", () => {
     expect(closeResponse.json()).toEqual({ error: "Project not found" });
   });
 
+  it("sets, persists, and clears a project color", async () => {
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Colored", path: appTestContext.projectDir, create: true },
+    });
+    const project = addResponse.json<Project>();
+    expect(project.color).toBeUndefined();
+
+    const setResponse = await appTestContext.app.inject({ method: "PUT", url: `/api/projects/${project.id}`, payload: { color: "#30a46c" } });
+    expect(setResponse.statusCode).toBe(200);
+    expect(setResponse.json<Project>()).toMatchObject({ id: project.id, color: "#30a46c" });
+
+    const listResponse = await appTestContext.app.inject({ method: "GET", url: "/api/projects" });
+    expect(listResponse.json<Project[]>()).toEqual([{ ...project, color: "#30a46c" }]);
+
+    const clearResponse = await appTestContext.app.inject({ method: "PUT", url: `/api/projects/${project.id}`, payload: { color: null } });
+    expect(clearResponse.statusCode).toBe(200);
+    expect(clearResponse.json<Project>()).toEqual(project);
+  });
+
+  it("rejects a malformed color and an unknown project", async () => {
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Guarded", path: appTestContext.projectDir, create: true },
+    });
+    const project = addResponse.json<Project>();
+
+    const badColor = await appTestContext.app.inject({ method: "PUT", url: `/api/projects/${project.id}`, payload: { color: "red" } });
+    expect(badColor.statusCode).toBe(400);
+    expect(badColor.json()).toHaveProperty("error");
+
+    const missing = await appTestContext.app.inject({ method: "PUT", url: "/api/projects/does-not-exist", payload: { color: "#30a46c" } });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "Project not found" });
+  });
+
   it("lists a non-git project as a single workspace", async () => {
     const addResponse = await appTestContext.app.inject({
       method: "POST",

@@ -34,6 +34,7 @@ describe("ProjectController", () => {
           addProject: vi.fn(),
           closeProject: vi.fn(),
           setWorkspaceTrust: vi.fn(),
+          setProjectColor: vi.fn(),
         },
       },
     );
@@ -65,6 +66,7 @@ describe("ProjectController", () => {
           addProject: vi.fn().mockResolvedValue(addedProject),
           closeProject: vi.fn(),
           setWorkspaceTrust: vi.fn(),
+          setProjectColor: vi.fn(),
         },
       },
     );
@@ -93,6 +95,7 @@ describe("ProjectController", () => {
           addProject: vi.fn().mockResolvedValue(addedProject),
           closeProject: vi.fn(),
           setWorkspaceTrust,
+          setProjectColor: vi.fn(),
         },
       },
     );
@@ -121,6 +124,7 @@ describe("ProjectController", () => {
           addProject: vi.fn().mockResolvedValue(addedProject),
           closeProject: vi.fn(),
           setWorkspaceTrust,
+          setProjectColor: vi.fn(),
         },
       },
     );
@@ -162,6 +166,7 @@ describe("ProjectController", () => {
           addProject: vi.fn(),
           closeProject: vi.fn().mockResolvedValue(undefined),
           setWorkspaceTrust: vi.fn(),
+          setProjectColor: vi.fn(),
         },
       },
     );
