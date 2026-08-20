@@ -53,6 +53,7 @@
     "build:plugin-api": "tsc -p tsconfig.plugin-api.json",
     "build:plugins": "tsc -p tsconfig.plugins.json && node scripts/build-plugins.mjs",
     "capture:screenshots": "node scripts/capture-screenshots.mjs",
+    "prototype:voice-mode": "tsx src/client/src/voiceMode.prototype.tui.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:cached": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/pi-web/typecheck.tsbuildinfo",
     "knip": "knip",
