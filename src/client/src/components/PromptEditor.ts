@@ -15,8 +15,11 @@ import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge } from "./promptEditorIcons";
+import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge, renderMicIcon, renderMicOffIcon, renderSpeakingIcon } from "./promptEditorIcons";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
+import { VoiceModeController } from "../controllers/voiceModeController";
+import { isSpeechRecognitionSupported, startListening } from "../speechRecognition";
+import { isTextToSpeechSupported, speak, stopSpeaking } from "../textToSpeech";
 import "./AutocompleteMenu";
 
 type PendingAttachment = CapturedAttachment & { id: string };
@@ -63,6 +66,13 @@ export class PromptEditor extends LitElement {
   private readonly readOnlyCompartment = new Compartment();
   private readonly mobilePromptEnterMedia = createMobilePromptEnterMedia();
   private explicitShiftKeyActive = false;
+  private readonly voiceMode = new VoiceModeController({
+    onTranscriptReady: (transcript) => { this.sendVoiceTranscript(transcript); },
+    onStateChange: () => { this.requestUpdate(); },
+    startListening,
+    speak,
+    stopSpeaking,
+  });
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (!changed.has("sessionId") && !changed.has("machineId")) return;
@@ -100,6 +110,7 @@ export class PromptEditor extends LitElement {
   override disconnectedCallback(): void {
     this.editor?.destroy();
     this.editor = undefined;
+    this.voiceMode.dispose();
     super.disconnectedCallback();
   }
 
@@ -123,6 +134,7 @@ export class PromptEditor extends LitElement {
           ${this.renderCompactStatus()}
           <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
           ${this.canSteer && !this.isCompacting ? html`<button class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
+          ${isSpeechRecognitionSupported() && isTextToSpeechSupported() ? this.renderVoiceModeButton() : null}
           <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop || this.stopping} title=${this.stopping ? "Stopping… waiting for the current turn to unwind" : this.canStop ? "Stop current work and clear queued messages" : "Nothing running"} aria-label=${this.stopping ? "Stopping" : "Stop current work"} @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
         </div>
       </footer>
@@ -155,9 +167,38 @@ export class PromptEditor extends LitElement {
     this.selectedIndex = 0;
   }
 
+  /** Called by the host once a just-finished assistant reply's text is
+   * available, so voice mode (if this session is in it) can speak it. A
+   * no-op if voice mode isn't currently awaiting a reply. */
+  notifyAssistantReply(text: string): void {
+    this.voiceMode.replyReceived(text);
+  }
+
   /** Get the underlying CM6 EditorView, or undefined if not yet mounted. */
   get view(): EditorView | undefined {
     return this.editor;
+  }
+
+  private sendVoiceTranscript(transcript: string): void {
+    this.replaceText(transcript);
+    this.send("followUp");
+  }
+
+  private renderVoiceModeButton() {
+    const voiceState = this.voiceMode.currentState;
+    const stateClass = voiceState.kind === "off" ? "" : voiceState.kind === "listening" ? "listening" : voiceState.kind === "speaking" ? "speaking" : "awaiting";
+    const label = voiceState.kind === "off" ? "Turn on voice mode"
+      : voiceState.kind === "listening" ? "Voice mode: listening (click to turn off)"
+      : voiceState.kind === "awaiting-reply" ? "Voice mode: waiting for reply (click to turn off)"
+      : "Voice mode: speaking reply (click to turn off)";
+    const icon = voiceState.kind === "off" ? renderMicOffIcon()
+      : voiceState.kind === "speaking" ? renderSpeakingIcon()
+      : renderMicIcon();
+    return html`
+      <button type="button" class=${`icon-button voice-mode-button ${stateClass}`} ?disabled=${this.disabled} title=${label} aria-label=${label} aria-pressed=${voiceState.kind !== "off"} @click=${() => { this.voiceMode.toggle(); }}>
+        ${icon}
+      </button>
+    `;
   }
 
   private renderCompactStatus() {

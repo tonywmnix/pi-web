@@ -46,6 +46,35 @@ export function renderStopIcon(): TemplateResult {
   `;
 }
 
+export function renderMicOffIcon(): TemplateResult {
+  return svg`
+    <svg class="prompt-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path>
+      <path d="M5 16a7 7 0 0 0 14 0"></path>
+      <path d="m3 3 18 18"></path>
+    </svg>
+  `;
+}
+
+export function renderMicIcon(): TemplateResult {
+  return svg`
+    <svg class="prompt-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path>
+      <path d="M5 16a7 7 0 0 0 14 0"></path>
+    </svg>
+  `;
+}
+
+export function renderSpeakingIcon(): TemplateResult {
+  return svg`
+    <svg class="prompt-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M13 3v2a8 8 0 0 1 0 16v-2a6 6 0 0 0 0-12V3z"></path>
+      <path d="M9 13a3 3 0 0 1 6 0"></path>
+      <rect x="5" y="7" width="2" height="10" rx="1"></rect>
+    </svg>
+  `;
+}
+
 /**
  * A gauge whose bar count comes from the available thinking levels (the non-"off"
  * levels) and whose fill reflects the current level's rank. Bars are laid out to

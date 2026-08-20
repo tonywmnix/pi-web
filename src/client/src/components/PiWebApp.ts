@@ -140,6 +140,7 @@ export class PiWebApp extends LitElement {
   private readonly assistantMessageObservers = new AssistantMessageObserverController({
     onMessage: (event) => {
       this.plugins.notifyAssistantMessage({ machine: pluginMachineFromState(this.state) }, event);
+      this.promptEditor?.notifyAssistantReply(event.text);
     },
   });
   private readonly sessions = new SessionController(

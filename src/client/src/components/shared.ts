@@ -569,6 +569,10 @@ export const promptEditorStyles = css`
   .icon-button .prompt-action-icon-filled { fill: currentColor; stroke: none; }
   .send-button:not(:disabled) { color: var(--pi-accent, var(--pi-text)); }
   .stop-button:not(:disabled) { color: var(--pi-danger); }
+  .voice-mode-button.listening:not(:disabled) { color: var(--pi-accent, var(--pi-text)); animation: voice-listening-pulse 1.4s ease-in-out infinite; }
+  .voice-mode-button.awaiting:not(:disabled) { color: var(--pi-muted); }
+  .voice-mode-button.speaking:not(:disabled) { color: var(--pi-success); }
+  @keyframes voice-listening-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pi-accent) 45%, transparent); } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--pi-accent) 0%, transparent); } }
   .select-thinking .prompt-thinking-gauge .gauge-bar { fill: currentColor; stroke: none; opacity: .28; }
   .select-thinking .prompt-thinking-gauge .gauge-bar-active { opacity: 1; }
   .editor-attach { position: absolute; right: 8px; bottom: 8px; z-index: 2; width: 30px; height: 30px; }
