@@ -673,6 +673,7 @@ interface PluginContributions {
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
   messageObservers?: MessageObserverContribution[];
+  ttsProviders?: TtsProviderContribution[];
 }
 ```
 
@@ -1048,6 +1049,44 @@ interface ObservedAssistantMessage {
 ```
 
 `onAssistantMessage` is fire-and-forget: PI WEB does not await a response, and one observer throwing or rejecting is logged to the console without stopping other observers. Keep the callback fast; move slow work (network calls, heavy text processing) into an internal async task the callback kicks off rather than awaiting it inline.
+
+### TTS providers
+
+By default, PI WEB's built-in speech features — the chat message "Read aloud" button and voice mode's spoken replies — speak through the browser's native `speechSynthesis` API. A plugin can take over instead by contributing a `ttsProviders` entry:
+
+```js
+ttsProviders: [
+  {
+    id: "my-tts",
+    name: "My TTS",
+    isAvailable: () => loadMySettings().apiKey.trim() !== "",
+    speak: (text, onDone) => {
+      mySpeakEngine.speak(text).then(onDone, onDone);
+    },
+    stopSpeaking: () => mySpeakEngine.stop(),
+  },
+]
+```
+
+Contribution type:
+
+```ts
+interface TtsProviderContribution {
+  id: string;
+  /** Human-readable name; not shown anywhere in the UI yet. */
+  name: string;
+  /** Whether this provider can currently speak (e.g. an API key is configured). Checked on every resolution. Omit to always report available. */
+  isAvailable?: () => boolean;
+  /** Speak `text` aloud. Must call `onDone` exactly once when playback ends — naturally, on error, or because it was stopped/superseded. */
+  speak: (text: string, onDone: () => void) => void;
+  /** Stop any speech this provider currently has in progress. */
+  stopSpeaking: () => void;
+}
+```
+
+PI WEB resolves one active provider: the first registered `ttsProviders` contribution that is active for the selected machine and currently reports itself available, checked fresh on every resolution (so a provider that becomes unavailable — e.g. its API key is cleared — is skipped in favor of the next one, or the native fallback if none remain). PI WEB does not otherwise arbitrate between multiple installed TTS-providing plugins; disable all but the one you want active.
+
+Voice mode's hands-free loop waits for `onDone` before it starts listening for the next turn — a provider that never calls `onDone` (including on failure) will hang that loop, so always call it in every code path, not just the success path.
 
 ## Calling paired workspace backends
 

@@ -51,6 +51,7 @@ export interface PluginContributions {
   themes?: ThemeContribution[];
   themePairs?: ThemePairContribution[];
   messageObservers?: MessageObserverContribution[];
+  ttsProviders?: TtsProviderContribution[];
 }
 
 export interface PluginMachine {
@@ -101,6 +102,48 @@ export interface MessageObserverContribution {
 }
 
 export interface QualifiedMessageObserverContribution extends MessageObserverContribution {
+  pluginId: PluginId;
+  localId: LocalContributionId;
+  machineId?: string;
+  sourcePluginId?: PluginId;
+}
+
+/**
+ * Lets a plugin supply the text-to-speech backend PI WEB's built-in
+ * speech features (the chat message "Read aloud" button, and voice mode's
+ * spoken replies) use, instead of the browser's native `speechSynthesis`.
+ *
+ * When more than one contribution is active and available at once, the
+ * first one registered wins — PI WEB does not otherwise arbitrate between
+ * them, so a host with more than one TTS-providing plugin installed should
+ * disable all but the one it wants active.
+ */
+export interface TtsProviderContribution {
+  id: LocalContributionId;
+  /** Human-readable name; not shown anywhere in the UI yet, but useful for future diagnostics. */
+  name: string;
+  /**
+   * Whether this provider can currently speak (e.g. an API key is
+   * configured). Checked every time PI WEB resolves the active provider; a
+   * provider that becomes unavailable is skipped in favor of the next
+   * active contribution, or the built-in `speechSynthesis` fallback if none
+   * remain. Omit to always report available.
+   */
+  isAvailable?: () => boolean;
+  /**
+   * Speak `text` aloud. Must call `onDone` exactly once when playback ends
+   * — naturally, on error, or because it was stopped/superseded — the same
+   * contract as the browser's `SpeechSynthesisUtterance` "end"/"error"
+   * events. PI WEB's voice mode waits for `onDone` before it starts
+   * listening for the next turn, so a provider that never calls it will
+   * hang voice mode's hands-free loop.
+   */
+  speak: (text: string, onDone: () => void) => void;
+  /** Stop any speech this provider currently has in progress. */
+  stopSpeaking: () => void;
+}
+
+export interface QualifiedTtsProviderContribution extends TtsProviderContribution {
   pluginId: PluginId;
   localId: LocalContributionId;
   machineId?: string;

@@ -27,6 +27,7 @@ import { machineSessionKey } from "../machineKeys";
 import { sessionCleanupRequestKey } from "../sessionCleanupUi";
 import { selectedNotificationView } from "../sessionNotifications";
 import { SessionUnreadController } from "../sessionUnread";
+import { setActiveTtsProvider } from "../textToSpeech";
 import { initialSessionWarningVisibilityState, reconcileSessionWarningVisibility, toggleSessionWarnings } from "../sessionWarningVisibility";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import type { PluginMachine, PluginPromptEditor, QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspacePanelContribution, PluginRuntimeContext, TerminalCommandRunsInternalRuntime, WorkspaceFiles, WorkspaceHost, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePluginBinding } from "../plugins/types";
@@ -273,6 +274,20 @@ export class PiWebApp extends LitElement {
     this.toggleAttribute("pwa-display-mode", this.appShell.isPwaDisplayMode);
     this.syncSessionWarningVisibility();
     this.syncDocumentTitle();
+    this.syncActiveTtsProvider();
+  }
+
+  /**
+   * Pushes the currently active `ttsProviders` plugin contribution (if any)
+   * into `textToSpeech.ts`, so the "Read aloud" button and voice mode speak
+   * through it instead of the browser's native `speechSynthesis`. Cheap
+   * array scan over registered contributions; run on every render so it
+   * stays correct across plugin loads and machine switches without needing
+   * to hook every specific event that could change the answer.
+   */
+  private syncActiveTtsProvider(): void {
+    const provider = this.plugins.getActiveTtsProvider(selectedMachineId(this.state));
+    setActiveTtsProvider(provider === undefined ? undefined : { speak: provider.speak, stopSpeaking: provider.stopSpeaking });
   }
 
   /**

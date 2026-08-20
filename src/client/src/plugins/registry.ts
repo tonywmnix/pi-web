@@ -1,6 +1,6 @@
 import { html, svg } from "lit";
 import { requirePluginBackendRevision } from "../../../shared/pluginBackendProtocol";
-import type { MessageObserverContext, MessageObserverContribution, ObservedAssistantMessage, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, QualifiedContributionId, QualifiedMessageObserverContribution, QualifiedPluginAction, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution, WorkspacePluginBinding } from "./types";
+import type { MessageObserverContext, MessageObserverContribution, ObservedAssistantMessage, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, QualifiedContributionId, QualifiedMessageObserverContribution, QualifiedPluginAction, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedTtsProviderContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, ThemeContribution, ThemePairContribution, TtsProviderContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution, WorkspacePluginBinding } from "./types";
 
 const idPattern = /^[a-z][a-z0-9.-]*$/u;
 const localIdPattern = /^[a-z][a-z0-9.-]*$/u;
@@ -25,6 +25,7 @@ export class PluginRegistry {
   private readonly themes: QualifiedThemeContribution[] = [];
   private readonly themePairs: QualifiedThemePairContribution[] = [];
   private readonly messageObservers: QualifiedMessageObserverContribution[] = [];
+  private readonly ttsProviders: QualifiedTtsProviderContribution[] = [];
   private readonly pluginIds = new Set<string>();
   private readonly registeringPluginIds = new Set<string>();
   private readonly gatewayPluginIds = new Set<string>();
@@ -65,6 +66,7 @@ export class PluginRegistry {
         ? (contributions.themePairs ?? []).map((pair) => this.qualifyThemePair(runtimePluginId, pair, contributionIds))
         : [];
       const messageObservers = (contributions.messageObservers ?? []).map((observer) => this.qualifyMessageObserver(runtimePluginId, observer, registration.machineId, registration.sourcePluginId, contributionIds));
+      const ttsProviders = (contributions.ttsProviders ?? []).map((provider) => this.qualifyTtsProvider(runtimePluginId, provider, registration.machineId, registration.sourcePluginId, contributionIds));
 
       this.pluginIds.add(runtimePluginId);
       for (const contributionId of contributionIds) this.contributionIds.add(contributionId);
@@ -74,6 +76,7 @@ export class PluginRegistry {
       this.themes.push(...themes);
       this.themePairs.push(...themePairs);
       this.messageObservers.push(...messageObservers);
+      this.ttsProviders.push(...ttsProviders);
       if (registration.machineId === undefined) {
         this.gatewayPluginIds.add(runtimePluginId);
         if (machineSpecific) this.gatewayMachineSpecificPluginIds.add(runtimePluginId);
@@ -268,6 +271,42 @@ export class PluginRegistry {
         console.error(`PI WEB plugin message observer ${observer.id} failed`, error);
       }
     }
+  }
+
+  private qualifyTtsProvider(
+    pluginId: string,
+    contribution: TtsProviderContribution,
+    machineId: string | undefined,
+    sourcePluginId: string | undefined,
+    contributionIds: Set<QualifiedContributionId>,
+  ): QualifiedTtsProviderContribution {
+    const id = this.qualify(pluginId, contribution.id, contributionIds);
+    return {
+      ...contribution,
+      id,
+      pluginId,
+      localId: contribution.id,
+      ...(machineId === undefined ? {} : { machineId }),
+      ...(sourcePluginId === undefined ? {} : { sourcePluginId }),
+    };
+  }
+
+  /**
+   * Resolves the active TTS provider for `selectedMachineId`, if any: the
+   * first registered contribution that is active for that machine (see
+   * {@link isContributionActive}) and reports itself available (per its
+   * optional `isAvailable()`, checked fresh on every call). Returns
+   * `undefined` when no contribution qualifies, so the caller (PiWebApp,
+   * which owns pushing this into `textToSpeech.ts`) can fall back to the
+   * browser's native `speechSynthesis`.
+   */
+  getActiveTtsProvider(selectedMachineId: string): QualifiedTtsProviderContribution | undefined {
+    for (const provider of this.ttsProviders) {
+      if (!this.isContributionActive(provider.pluginId, provider.machineId, selectedMachineId, provider.sourcePluginId)) continue;
+      if (provider.isAvailable?.() === false) continue;
+      return provider;
+    }
+    return undefined;
   }
 
   private qualifyTheme(pluginId: string, theme: ThemeContribution, contributionIds: Set<QualifiedContributionId>): QualifiedThemeContribution {

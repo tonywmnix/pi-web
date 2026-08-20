@@ -1,13 +1,20 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isTextToSpeechSupported, speak, stopSpeaking } from "./textToSpeech";
+import { isTextToSpeechSupported, setActiveTtsProvider, speak, stopSpeaking } from "./textToSpeech";
 
 afterEach(() => {
   vi.restoreAllMocks();
   Reflect.deleteProperty(window, "speechSynthesis");
   Reflect.deleteProperty(window, "SpeechSynthesisUtterance");
+  // activeProvider is module-level state; clear it so it doesn't leak into
+  // the next test (whether or not that test itself sets one).
+  setActiveTtsProvider(undefined);
 });
+
+function fakeProvider() {
+  return { speak: vi.fn(), stopSpeaking: vi.fn() };
+}
 
 /** Minimal fake standing in for `SpeechSynthesisUtterance` + `window.speechSynthesis`,
  * since happy-dom does not implement the Web Speech API. */
@@ -115,5 +122,81 @@ describe("textToSpeech", () => {
 
   it("stopSpeaking is a no-op when unsupported", () => {
     expect(() => { stopSpeaking(); }).not.toThrow();
+  });
+});
+
+describe("textToSpeech active provider delegation", () => {
+  it("reports supported once a provider is set, even with no native speechSynthesis", () => {
+    expect(isTextToSpeechSupported()).toBe(false);
+    setActiveTtsProvider(fakeProvider());
+    expect(isTextToSpeechSupported()).toBe(true);
+  });
+
+  it("speak() delegates to the active provider instead of native speechSynthesis", () => {
+    const native = stubSpeechSynthesis();
+    const provider = fakeProvider();
+    setActiveTtsProvider(provider);
+    const onDone = vi.fn();
+
+    speak("hello", onDone);
+
+    expect(provider.speak).toHaveBeenCalledWith("hello", onDone);
+    expect(native.spoken).toEqual([]);
+  });
+
+  it("stopSpeaking() delegates to the active provider instead of native speechSynthesis", () => {
+    const native = stubSpeechSynthesis();
+    const provider = fakeProvider();
+    setActiveTtsProvider(provider);
+    native.cancel.mockClear();
+
+    stopSpeaking();
+
+    expect(provider.stopSpeaking).toHaveBeenCalledOnce();
+    expect(native.cancel).not.toHaveBeenCalled();
+  });
+
+  it("still short-circuits blank text without calling the provider", () => {
+    const provider = fakeProvider();
+    setActiveTtsProvider(provider);
+    const onDone = vi.fn();
+
+    speak("   ", onDone);
+
+    expect(provider.speak).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it("stops the outgoing provider when switching to a different provider", () => {
+    const first = fakeProvider();
+    const second = fakeProvider();
+    setActiveTtsProvider(first);
+
+    setActiveTtsProvider(second);
+
+    expect(first.stopSpeaking).toHaveBeenCalledOnce();
+    expect(second.stopSpeaking).not.toHaveBeenCalled();
+  });
+
+  it("stops the outgoing provider and falls back to native speechSynthesis when cleared", () => {
+    const native = stubSpeechSynthesis();
+    const provider = fakeProvider();
+    setActiveTtsProvider(provider);
+
+    setActiveTtsProvider(undefined);
+    const onDone = vi.fn();
+    speak("hello again", onDone);
+
+    expect(provider.stopSpeaking).toHaveBeenCalledOnce();
+    expect(native.spoken).toEqual(["hello again"]);
+  });
+
+  it("setActiveTtsProvider is a no-op (no extra stop) when set to the same provider instance again", () => {
+    const provider = fakeProvider();
+    setActiveTtsProvider(provider);
+
+    setActiveTtsProvider(provider);
+
+    expect(provider.stopSpeaking).not.toHaveBeenCalled();
   });
 });

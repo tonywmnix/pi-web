@@ -1199,3 +1199,123 @@ describe("PluginRegistry.notifyAssistantMessage", () => {
     expect(onAssistantMessage).toHaveBeenCalledOnce();
   });
 });
+
+describe("PluginRegistry.getActiveTtsProvider", () => {
+  function ttsProvider(id: string, overrides: Partial<{ isAvailable: () => boolean }> = {}) {
+    return {
+      id,
+      name: id,
+      speak: vi.fn(),
+      stopSpeaking: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it("returns undefined when no plugin contributes a ttsProvider", () => {
+    const registry = new PluginRegistry();
+    expect(registry.getActiveTtsProvider("local")).toBeUndefined();
+  });
+
+  it("returns a registered provider, qualified with the plugin id", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "voice",
+      plugin: {
+        apiVersion: 2,
+        name: "Voice",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("openrouter")] } }),
+      },
+    });
+
+    const provider = registry.getActiveTtsProvider("local");
+
+    expect(provider?.id).toBe("voice:openrouter");
+    expect(provider?.pluginId).toBe("voice");
+    expect(provider?.localId).toBe("openrouter");
+  });
+
+  it("the first registered provider wins when more than one is active", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "first",
+      plugin: { apiVersion: 2, name: "First", activate: () => ({ contributions: { ttsProviders: [ttsProvider("a")] } }) },
+    });
+    registry.register({
+      id: "second",
+      plugin: { apiVersion: 2, name: "Second", activate: () => ({ contributions: { ttsProviders: [ttsProvider("b")] } }) },
+    });
+
+    expect(registry.getActiveTtsProvider("local")?.id).toBe("first:a");
+  });
+
+  it("skips a provider whose isAvailable() reports false and falls through to the next", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "unconfigured",
+      plugin: {
+        apiVersion: 2,
+        name: "Unconfigured",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("a", { isAvailable: () => false })] } }),
+      },
+    });
+    registry.register({
+      id: "configured",
+      plugin: {
+        apiVersion: 2,
+        name: "Configured",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("b", { isAvailable: () => true })] } }),
+      },
+    });
+
+    expect(registry.getActiveTtsProvider("local")?.id).toBe("configured:b");
+  });
+
+  it("returns undefined when every provider is unavailable", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "unconfigured",
+      plugin: {
+        apiVersion: 2,
+        name: "Unconfigured",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("a", { isAvailable: () => false })] } }),
+      },
+    });
+
+    expect(registry.getActiveTtsProvider("local")).toBeUndefined();
+  });
+
+  it("re-checks isAvailable() on every call rather than caching the first result", () => {
+    const registry = new PluginRegistry();
+    let available = false;
+    registry.register({
+      id: "voice",
+      plugin: {
+        apiVersion: 2,
+        name: "Voice",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("a", { isAvailable: () => available })] } }),
+      },
+    });
+
+    expect(registry.getActiveTtsProvider("local")).toBeUndefined();
+    available = true;
+    expect(registry.getActiveTtsProvider("local")?.id).toBe("voice:a");
+  });
+
+  it("does not return a machine-specific plugin's provider when a different machine is selected", () => {
+    const registry = new PluginRegistry();
+    registry.register({
+      id: "remote-voice",
+      sourcePluginId: "remote-voice",
+      machineId: "remote-1",
+      machineSpecific: true,
+      plugin: {
+        apiVersion: 2,
+        name: "RemoteVoice",
+        activate: () => ({ contributions: { ttsProviders: [ttsProvider("a")] } }),
+      },
+    });
+
+    expect(registry.getActiveTtsProvider("local")).toBeUndefined();
+    expect(registry.getActiveTtsProvider("remote-1")?.id).toBe("remote-voice:a");
+  });
+});
