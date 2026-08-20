@@ -7,6 +7,7 @@ Plugins can currently:
 - add action-palette commands;
 - add workspace tools/panels next to Files and Terminal;
 - add compact workspace-label items in the workspace list, panel header, and status bar;
+- observe finalized assistant messages in the currently selected session;
 - call browser APIs and documented PI WEB plugin context helpers;
 - read workspace files and start workspace terminal commands through documented helpers;
 - serve browser-public files from an explicitly declared `browserRoot`;
@@ -671,6 +672,7 @@ interface PluginContributions {
   actions?: PluginAction[];
   workspacePanels?: WorkspacePanelContribution[];
   workspaceLabels?: WorkspaceLabelContribution[];
+  messageObservers?: MessageObserverContribution[];
 }
 ```
 
@@ -1007,6 +1009,45 @@ export default {
   }),
 };
 ```
+
+### Message observers
+
+Message observers are notified once per turn that finishes with a readable assistant message, for the *currently selected* session only — that is the only session whose transcript is loaded client-side, so this intentionally does not cover background/unselected sessions the way browser notifications do. An observer is not called while a reply is still streaming, and is not called for a turn that ends without any assistant text (e.g. a turn that ends on a bare tool call).
+
+```js
+messageObservers: [
+  {
+    id: "log-replies",
+    onAssistantMessage: (context, message) => {
+      console.log(`[${context.machine.name}] session ${message.sessionId} said:`, message.text);
+    },
+  },
+]
+```
+
+Contribution type:
+
+```ts
+interface MessageObserverContribution {
+  id: string;
+  onAssistantMessage: (context: MessageObserverContext, message: ObservedAssistantMessage) => void | Promise<void>;
+}
+
+interface MessageObserverContext {
+  machine: PluginMachine;
+}
+
+interface ObservedAssistantMessage {
+  /** Always the currently selected session's id. */
+  sessionId: string;
+  /** The message's index in that session's raw transcript. */
+  index: number;
+  /** Plain-text rendering of the message's text parts only — no tool calls, thinking blocks, or images. */
+  text: string;
+}
+```
+
+`onAssistantMessage` is fire-and-forget: PI WEB does not await a response, and one observer throwing or rejecting is logged to the console without stopping other observers. Keep the callback fast; move slow work (network calls, heavy text processing) into an internal async task the callback kicks off rather than awaiting it inline.
 
 ## Calling paired workspace backends
 

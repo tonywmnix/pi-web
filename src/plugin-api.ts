@@ -66,6 +66,7 @@ export interface PluginContributions {
   workspaceLabels?: WorkspaceLabelContribution[];
   themes?: ThemeContribution[];
   themePairs?: ThemePairContribution[];
+  messageObservers?: MessageObserverContribution[];
 }
 
 export interface PluginMachine {
@@ -171,6 +172,31 @@ export interface WorkspaceBackend {
 
 export interface WorkspaceHost {
   requestRender(): void;
+}
+
+/** One finalized assistant message, as delivered to a {@link MessageObserverContribution}. */
+export interface ObservedAssistantMessage {
+  /** Session the message belongs to — always the currently selected session; see the contribution's docs. */
+  sessionId: string;
+  /** The message's index in that session's raw transcript. */
+  index: number;
+  /** Plain-text rendering of the message's text parts only (no tool calls, thinking blocks, or images). */
+  text: string;
+}
+
+export interface MessageObserverContext {
+  machine: PluginMachine;
+}
+
+/**
+ * Observes finalized assistant messages for the currently selected session
+ * (the only session whose transcript is loaded client-side). Fires once per
+ * turn that ends with a readable assistant message — not on every streamed
+ * token, and not for turns that end without one (e.g. a bare tool call).
+ */
+export interface MessageObserverContribution {
+  id: LocalContributionId;
+  onAssistantMessage: (context: MessageObserverContext, message: ObservedAssistantMessage) => void | Promise<void>;
 }
 
 export type WorkspacePanelHost = WorkspaceHost;

@@ -1094,3 +1094,108 @@ function testThemeTokens(): ThemeTokens {
     "--pi-terminal-selection": "#000000",
   };
 }
+
+describe("PluginRegistry.notifyAssistantMessage", () => {
+  const localMachine = { id: "local", name: "local", kind: "local" as const };
+
+  it("invokes a registered message observer with the context and message", () => {
+    const registry = new PluginRegistry();
+    const onAssistantMessage = vi.fn();
+    registry.register({
+      id: "voice",
+      plugin: {
+        apiVersion: 2,
+        name: "Voice",
+        activate: () => ({ contributions: { messageObservers: [{ id: "auto-read", onAssistantMessage }] } }),
+      },
+    });
+
+    const message = { sessionId: "s1", index: 2, text: "Hello there!" };
+    registry.notifyAssistantMessage({ machine: localMachine }, message);
+
+    expect(onAssistantMessage).toHaveBeenCalledWith({ machine: localMachine }, message);
+  });
+
+  it("does not stop other observers when one throws synchronously", () => {
+    const registry = new PluginRegistry();
+    const second = vi.fn();
+    registry.register({
+      id: "broken",
+      plugin: {
+        apiVersion: 2,
+        name: "Broken",
+        activate: () => ({
+          contributions: { messageObservers: [{ id: "throws", onAssistantMessage: () => { throw new Error("boom"); } }] },
+        }),
+      },
+    });
+    registry.register({
+      id: "ok",
+      plugin: {
+        apiVersion: 2,
+        name: "Ok",
+        activate: () => ({ contributions: { messageObservers: [{ id: "listens", onAssistantMessage: second }] } }),
+      },
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    registry.notifyAssistantMessage({ machine: localMachine }, { sessionId: "s1", index: 0, text: "hi" });
+
+    expect(second).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("does not stop other observers when one rejects asynchronously", async () => {
+    const registry = new PluginRegistry();
+    const second = vi.fn();
+    registry.register({
+      id: "broken-async",
+      plugin: {
+        apiVersion: 2,
+        name: "BrokenAsync",
+        activate: () => ({
+          contributions: { messageObservers: [{ id: "rejects", onAssistantMessage: () => Promise.reject(new Error("async boom")) }] },
+        }),
+      },
+    });
+    registry.register({
+      id: "ok-async",
+      plugin: {
+        apiVersion: 2,
+        name: "OkAsync",
+        activate: () => ({ contributions: { messageObservers: [{ id: "listens", onAssistantMessage: second }] } }),
+      },
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    registry.notifyAssistantMessage({ machine: localMachine }, { sessionId: "s1", index: 0, text: "hi" });
+    expect(second).toHaveBeenCalledOnce();
+
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("does not notify a machine-specific plugin's observer when a different machine is selected", () => {
+    const registry = new PluginRegistry();
+    const onAssistantMessage = vi.fn();
+    registry.register({
+      id: "remote-voice",
+      sourcePluginId: "remote-voice",
+      machineId: "remote-1",
+      machineSpecific: true,
+      plugin: {
+        apiVersion: 2,
+        name: "RemoteVoice",
+        activate: () => ({ contributions: { messageObservers: [{ id: "auto-read", onAssistantMessage }] } }),
+      },
+    });
+
+    registry.notifyAssistantMessage({ machine: localMachine }, { sessionId: "s1", index: 0, text: "hi" });
+    expect(onAssistantMessage).not.toHaveBeenCalled();
+
+    registry.notifyAssistantMessage({ machine: { id: "remote-1", name: "Remote", kind: "remote" } }, { sessionId: "s1", index: 0, text: "hi" });
+    expect(onAssistantMessage).toHaveBeenCalledOnce();
+  });
+});

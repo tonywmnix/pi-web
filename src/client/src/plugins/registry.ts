@@ -1,6 +1,6 @@
 import { html, svg } from "lit";
 import { requirePluginBackendRevision } from "../../../shared/pluginBackendProtocol";
-import type { PiWebPluginRegistration, PluginAction, PluginRuntimeContext, QualifiedContributionId, QualifiedPluginAction, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution, WorkspacePluginBinding } from "./types";
+import type { MessageObserverContext, MessageObserverContribution, ObservedAssistantMessage, PiWebPluginRegistration, PluginAction, PluginRuntimeContext, QualifiedContributionId, QualifiedMessageObserverContribution, QualifiedPluginAction, QualifiedThemeContribution, QualifiedThemePairContribution, QualifiedWorkspaceLabelContribution, QualifiedWorkspacePanelContribution, ThemeContribution, ThemePairContribution, WorkspaceLabelContext, WorkspaceLabelContribution, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution, WorkspacePluginBinding } from "./types";
 
 const idPattern = /^[a-z][a-z0-9.-]*$/u;
 const localIdPattern = /^[a-z][a-z0-9.-]*$/u;
@@ -24,6 +24,7 @@ export class PluginRegistry {
   private readonly workspaceLabels: QualifiedWorkspaceLabelContribution[] = [];
   private readonly themes: QualifiedThemeContribution[] = [];
   private readonly themePairs: QualifiedThemePairContribution[] = [];
+  private readonly messageObservers: QualifiedMessageObserverContribution[] = [];
   private readonly pluginIds = new Set<string>();
   private readonly registeringPluginIds = new Set<string>();
   private readonly gatewayPluginIds = new Set<string>();
@@ -63,6 +64,7 @@ export class PluginRegistry {
       const themePairs = registration.machineId === undefined
         ? (contributions.themePairs ?? []).map((pair) => this.qualifyThemePair(runtimePluginId, pair, contributionIds))
         : [];
+      const messageObservers = (contributions.messageObservers ?? []).map((observer) => this.qualifyMessageObserver(runtimePluginId, observer, registration.machineId, registration.sourcePluginId, contributionIds));
 
       this.pluginIds.add(runtimePluginId);
       for (const contributionId of contributionIds) this.contributionIds.add(contributionId);
@@ -71,6 +73,7 @@ export class PluginRegistry {
       this.workspaceLabels.push(...workspaceLabels);
       this.themes.push(...themes);
       this.themePairs.push(...themePairs);
+      this.messageObservers.push(...messageObservers);
       if (registration.machineId === undefined) {
         this.gatewayPluginIds.add(runtimePluginId);
         if (machineSpecific) this.gatewayMachineSpecificPluginIds.add(runtimePluginId);
@@ -228,6 +231,43 @@ export class PluginRegistry {
       visible: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) && (visible?.(workspaceLabelContextFor(context, binding)) ?? true),
       items: (context) => this.isContributionActive(pluginId, machineId, context.machine.id, sourcePluginId) ? items(workspaceLabelContextFor(context, binding)) : [],
     };
+  }
+
+  private qualifyMessageObserver(
+    pluginId: string,
+    contribution: MessageObserverContribution,
+    machineId: string | undefined,
+    sourcePluginId: string | undefined,
+    contributionIds: Set<QualifiedContributionId>,
+  ): QualifiedMessageObserverContribution {
+    const id = this.qualify(pluginId, contribution.id, contributionIds);
+    return {
+      ...contribution,
+      id,
+      pluginId,
+      localId: contribution.id,
+      ...(machineId === undefined ? {} : { machineId }),
+      ...(sourcePluginId === undefined ? {} : { sourcePluginId }),
+    };
+  }
+
+  /**
+   * Fans a finalized assistant message out to every active message-observer
+   * contribution. Fire-and-forget: one plugin throwing or rejecting is
+   * logged and does not stop the others, since this notifies observers
+   * rather than awaiting a response from them.
+   */
+  notifyAssistantMessage(context: MessageObserverContext, message: ObservedAssistantMessage): void {
+    for (const observer of this.messageObservers) {
+      if (!this.isContributionActive(observer.pluginId, observer.machineId, context.machine.id, observer.sourcePluginId)) continue;
+      try {
+        void Promise.resolve(observer.onAssistantMessage(context, message)).catch((error: unknown) => {
+          console.error(`PI WEB plugin message observer ${observer.id} failed`, error);
+        });
+      } catch (error) {
+        console.error(`PI WEB plugin message observer ${observer.id} failed`, error);
+      }
+    }
   }
 
   private qualifyTheme(pluginId: string, theme: ThemeContribution, contributionIds: Set<QualifiedContributionId>): QualifiedThemeContribution {
