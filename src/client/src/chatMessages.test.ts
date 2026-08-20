@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE, type AskUserOutcome } from "../../shared/apiTypes";
 import { groupChatMessages } from "./chatGroups";
-import { appendText, appendThinking, normalizeMessage, normalizeMessages, textMessage } from "./chatMessages";
+import { appendText, appendThinking, messagePlainText, normalizeMessage, normalizeMessages, textMessage } from "./chatMessages";
 
 const askUserOutcome: AskUserOutcome = {
   askId: "ask-1",
@@ -214,5 +214,32 @@ describe("appendThinking", () => {
     expect(appendThinking([textMessage("assistant", "answer")], "plan")).toEqual([
       { role: "assistant", parts: [{ type: "text", text: "answer" }, { type: "thinking", text: "plan" }] },
     ]);
+  });
+});
+
+describe("messagePlainText", () => {
+  it("joins only text parts, trimmed, separated by a blank line", () => {
+    const message = textMessage("assistant", "  Hello there!  ");
+    expect(messagePlainText(message)).toBe("Hello there!");
+  });
+
+  it("skips non-text parts such as tool calls and thinking blocks", () => {
+    const message = {
+      role: "assistant" as const,
+      parts: [
+        { type: "thinking" as const, text: "planning..." },
+        { type: "text" as const, text: "Here's the answer." },
+        { type: "toolExecution" as const, toolCallId: "t1", toolName: "bash", summary: "Ran bash", status: "success" as const },
+      ],
+    };
+    expect(messagePlainText(message)).toBe("Here's the answer.");
+  });
+
+  it("returns an empty string for a message with no text parts", () => {
+    const message = {
+      role: "assistant" as const,
+      parts: [{ type: "toolExecution" as const, toolCallId: "t1", toolName: "bash", summary: "Ran bash", status: "success" as const }],
+    };
+    expect(messagePlainText(message)).toBe("");
   });
 });

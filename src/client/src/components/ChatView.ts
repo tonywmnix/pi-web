@@ -3,6 +3,7 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
+import { messagePlainText } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
@@ -930,11 +931,7 @@ export class ChatView extends LitElement {
   private messageCopyText(message: ChatLine): string {
     const cached = this.messageCopyTextCache.get(message);
     if (cached !== undefined) return cached;
-    const text = message.parts
-      .filter((part): part is Extract<ChatPart, { type: "text" }> => part.type === "text")
-      .map((part) => part.text.trim())
-      .filter((partText) => partText !== "")
-      .join("\n\n");
+    const text = messagePlainText(message);
     this.messageCopyTextCache.set(message, text);
     return text;
   }

@@ -6,6 +6,20 @@ export function normalizeMessages(messages: unknown[]): ChatLine[] {
   return coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
 }
 
+/**
+ * Plain-text rendering of a message's text parts only — no tool calls,
+ * thinking blocks, or images. Shared by the chat view's "copy message"
+ * button and the plugin API's assistant-message observer notifications, so
+ * both surfaces agree on what a message "says" in plain text.
+ */
+export function messagePlainText(message: ChatLine): string {
+  return message.parts
+    .filter((part): part is Extract<ChatPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter((partText) => partText !== "")
+    .join("\n\n");
+}
+
 export function textMessage(role: ChatLine["role"], text: string): ChatLine {
   return { role, parts: [{ type: "text", text }] };
 }
