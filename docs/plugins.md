@@ -1099,6 +1099,8 @@ interface TtsProviderContribution {
   name: string;
   /** Whether this provider can currently speak (e.g. an API key is configured). Checked on every resolution. Omit to always report available. */
   isAvailable?: () => boolean;
+  /** Whether this provider wants incremental, mid-generation speech instead of waiting for a full reply to finish before speaking. Checked live, same as isAvailable, only while voice mode is actively awaiting a reply. Omit to never stream. */
+  preferStreaming?: () => boolean;
   /** Speak `text` aloud. Must call `onDone` exactly once when playback ends — naturally, on error, or because it was stopped/superseded. */
   speak: (text: string, onDone: () => void) => void;
   /** Stop any speech this provider currently has in progress. */

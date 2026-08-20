@@ -36,6 +36,10 @@ export class VoiceModeController {
   private recognitionHandle: SpeechRecognitionHandle | undefined;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly deps: VoiceModeControllerDependencies;
+  private streaming = false;
+  private streamQueue: string[] = [];
+  private streamChunkInFlight = false;
+  private streamEnded = false;
 
   constructor(deps: VoiceModeControllerDependencies) {
     this.deps = deps;
@@ -43,6 +47,11 @@ export class VoiceModeController {
 
   get currentState(): VoiceState {
     return this.state;
+  }
+
+  /** True while a streaming reply is actively being spoken (i.e. `beginStreamingReply()` was called for the current turn and `endStream()`'s queue hasn't fully drained yet). */
+  get isStreaming(): boolean {
+    return this.streaming;
   }
 
   toggle(): void {
@@ -55,6 +64,65 @@ export class VoiceModeController {
 
   cancel(): void {
     this.dispatch({ kind: "CANCEL" });
+  }
+
+  /**
+   * Starts a streaming reply: transitions `awaiting-reply` -> `speaking`
+   * exactly like `replyReceived()` does, but does NOT itself speak anything
+   * — chunks arrive one at a time via `streamChunk()` instead. A no-op if
+   * not currently `awaiting-reply` (mirrors `replyReceived()`'s implicit
+   * guard: the underlying reducer just ignores REPLY_RECEIVED outside that
+   * state).
+   */
+  beginStreamingReply(): void {
+    this.streaming = true;
+    this.streamQueue = [];
+    this.streamChunkInFlight = false;
+    this.streamEnded = false;
+    this.dispatch({ kind: "REPLY_RECEIVED", text: "" });
+  }
+
+  /**
+   * Queues one chunk of text to be spoken next, once any prior chunk finishes.
+   * No-op if not currently in an active streaming reply (`isStreaming` false)
+   * or if the text is blank.
+   */
+  streamChunk(text: string): void {
+    if (!this.streaming || text.trim() === "") return;
+    this.streamQueue.push(text);
+    this.pumpStreamQueue();
+  }
+
+  /**
+   * Signals no more chunks are coming for this turn. Once every already-
+   * queued chunk has finished playing, dispatches TTS_DONE (returning voice
+   * mode to listening) exactly as the non-streaming path does when a single
+   * full-reply utterance finishes.
+   */
+  endStream(): void {
+    if (!this.streaming) return;
+    this.streamEnded = true;
+    this.maybeFinishStream();
+  }
+
+  private pumpStreamQueue(): void {
+    if (this.streamChunkInFlight) return;
+    const next = this.streamQueue.shift();
+    if (next === undefined) {
+      this.maybeFinishStream();
+      return;
+    }
+    this.streamChunkInFlight = true;
+    this.deps.speak(next, () => {
+      this.streamChunkInFlight = false;
+      this.pumpStreamQueue();
+    });
+  }
+
+  private maybeFinishStream(): void {
+    if (!this.streamEnded || this.streamChunkInFlight || this.streamQueue.length > 0) return;
+    this.streaming = false;
+    this.dispatch({ kind: "TTS_DONE" });
   }
 
   dispose(): void {
@@ -79,6 +147,10 @@ export class VoiceModeController {
     // Stop TTS if no longer speaking.
     if (this.state.kind !== "speaking") {
       this.deps.stopSpeaking();
+      this.streaming = false;
+      this.streamQueue = [];
+      this.streamChunkInFlight = false;
+      this.streamEnded = false;
     }
 
     // Start mic if just entered listening.
@@ -91,8 +163,8 @@ export class VoiceModeController {
       this.deps.onTranscriptReady(this.state.transcript);
     }
 
-    // Start TTS when transitioning to speaking.
-    if (this.state.kind === "speaking" && prevKind === "awaiting-reply") {
+    // Start TTS when transitioning to speaking (skip if streaming).
+    if (this.state.kind === "speaking" && prevKind === "awaiting-reply" && !this.streaming) {
       const reply = this.state.reply;
       this.deps.speak(reply, () => {
         this.dispatch({ kind: "TTS_DONE" });

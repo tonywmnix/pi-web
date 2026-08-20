@@ -185,6 +185,31 @@ export class PromptEditor extends LitElement {
     this.voiceMode.replyReceived(text);
   }
 
+  /** True while voice mode has sent a message via the mic and is waiting for this turn's reply to start. */
+  get isAwaitingVoiceReply(): boolean {
+    return this.voiceMode.currentState.kind === "awaiting-reply";
+  }
+
+  /** True while voice mode is actively speaking a streaming (not-yet-finished) reply. */
+  get isVoiceStreamActive(): boolean {
+    return this.voiceMode.isStreaming;
+  }
+
+  /** Starts a streaming reply in voice mode; see VoiceModeController.beginStreamingReply(). */
+  beginVoiceStream(): void {
+    this.voiceMode.beginStreamingReply();
+  }
+
+  /** Queues one chunk of streaming reply text to be spoken; see VoiceModeController.streamChunk(). */
+  streamVoiceChunk(text: string): void {
+    this.voiceMode.streamChunk(text);
+  }
+
+  /** Signals a streaming reply has no more chunks coming; see VoiceModeController.endStream(). */
+  finishVoiceStream(): void {
+    this.voiceMode.endStream();
+  }
+
   /** Get the underlying CM6 EditorView, or undefined if not yet mounted. */
   get view(): EditorView | undefined {
     return this.editor;

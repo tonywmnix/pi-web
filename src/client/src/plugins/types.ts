@@ -131,6 +131,17 @@ export interface TtsProviderContribution {
    */
   isAvailable?: () => boolean;
   /**
+   * Whether this provider wants incremental, mid-generation speech instead
+   * of waiting for a full reply to finish before speaking. Checked live,
+   * same as `isAvailable`, only while voice mode is actively awaiting a
+   * reply it just sent — a provider can flip this per-message if it wants
+   * (e.g. a user-facing toggle in its own settings panel). Providers that
+   * don't implement this are never asked to stream; PI WEB falls back to
+   * speaking the whole finished reply at once, exactly as before this field
+   * existed.
+   */
+  preferStreaming?: () => boolean;
+  /**
    * Speak `text` aloud. Must call `onDone` exactly once when playback ends
    * — naturally, on error, or because it was stopped/superseded — the same
    * contract as the browser's `SpeechSynthesisUtterance` "end"/"error"

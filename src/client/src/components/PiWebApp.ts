@@ -13,6 +13,7 @@ import { MachineStatusController } from "../controllers/machineStatusController"
 import { ProjectController, type ProjectTrustChoice } from "../controllers/projectController";
 import { PiWebStatusController } from "../controllers/piWebStatusController";
 import { AssistantMessageObserverController } from "../controllers/assistantMessageObserverController";
+import { VoiceStreamingSpeechController } from "../controllers/voiceStreamingSpeechController";
 import { PromptNotificationController } from "../controllers/promptNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
@@ -23,6 +24,7 @@ import { SessionStorageTerminalSelectionMemory } from "../controllers/terminalSe
 import { SessionStorageWorkspaceSelectionMemory } from "../controllers/workspaceSelection";
 import { KeyboardShortcutDispatcher } from "../keyboardShortcuts";
 import { selectedMachineId } from "../controllers/types";
+import { messagePlainText } from "../chatMessages";
 import { machineSessionKey } from "../machineKeys";
 import { sessionCleanupRequestKey } from "../sessionCleanupUi";
 import { selectedNotificationView } from "../sessionNotifications";
@@ -141,8 +143,17 @@ export class PiWebApp extends LitElement {
   private readonly assistantMessageObservers = new AssistantMessageObserverController({
     onMessage: (event) => {
       this.plugins.notifyAssistantMessage({ machine: pluginMachineFromState(this.state) }, event);
-      this.promptEditor?.notifyAssistantReply(event.text);
+      const alreadySpokenViaStreaming = this.voiceStreamingSpeech.finishTurn();
+      if (!alreadySpokenViaStreaming) this.promptEditor?.notifyAssistantReply(event.text);
     },
+  });
+  private readonly voiceStreamingSpeech = new VoiceStreamingSpeechController({
+    isStreamingPreferred: () => this.plugins.getActiveTtsProvider(selectedMachineId(this.state))?.preferStreaming?.() === true,
+    isAwaitingVoiceReply: () => this.promptEditor?.isAwaitingVoiceReply === true,
+    isVoiceStreamActive: () => this.promptEditor?.isVoiceStreamActive === true,
+    beginVoiceStream: () => { this.promptEditor?.beginVoiceStream(); },
+    streamVoiceChunk: (text) => { this.promptEditor?.streamVoiceChunk(text); },
+    finishVoiceStream: () => { this.promptEditor?.finishVoiceStream(); },
   });
   private readonly sessions = new SessionController(
     () => this.state,
@@ -275,6 +286,7 @@ export class PiWebApp extends LitElement {
     this.syncSessionWarningVisibility();
     this.syncDocumentTitle();
     this.syncActiveTtsProvider();
+    this.syncVoiceStreamingSpeech();
   }
 
   /**
@@ -288,6 +300,22 @@ export class PiWebApp extends LitElement {
   private syncActiveTtsProvider(): void {
     const provider = this.plugins.getActiveTtsProvider(selectedMachineId(this.state));
     setActiveTtsProvider(provider === undefined ? undefined : { speak: provider.speak, stopSpeaking: provider.stopSpeaking });
+  }
+
+  /**
+   * Feeds the selected session's in-progress (not yet finalized) assistant
+   * message text into the streaming-speech orchestrator on every render, so
+   * voice mode can start speaking a reply before it finishes generating.
+   * See VoiceStreamingSpeechController for the actual logic; this just
+   * supplies the live inputs it needs each render.
+   */
+  private syncVoiceStreamingSpeech(): void {
+    const status = this.state.status;
+    const lastMessage = this.state.messages.at(-1);
+    const inProgressText = status?.isStreaming === true && lastMessage?.role === "assistant"
+      ? messagePlainText(lastMessage)
+      : undefined;
+    this.voiceStreamingSpeech.sync(status?.isStreaming === true, inProgressText);
   }
 
   /**

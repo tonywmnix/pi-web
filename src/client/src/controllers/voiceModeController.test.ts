@@ -223,4 +223,146 @@ describe("VoiceModeController", () => {
     expect(controller.currentState.kind).toBe("listening");
     expect(startListening.mock.calls.length).toBe(startListeningCallsBeforeReply + 1);
   });
+
+  it("beginStreamingReply() from awaiting-reply transitions to speaking without calling speak", () => {
+    const { controller, speak, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    expect(controller.currentState.kind).toBe("awaiting-reply");
+
+    controller.beginStreamingReply();
+
+    expect(controller.currentState.kind).toBe("speaking");
+    expect(speak).not.toHaveBeenCalled();
+  });
+
+  it("beginStreamingReply() sets isStreaming to true", () => {
+    const { controller, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+
+    controller.beginStreamingReply();
+
+    expect(controller.isStreaming).toBe(true);
+  });
+
+  it("streamChunk() after beginStreamingReply() calls speak with the chunk text", () => {
+    const { controller, speak, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+
+    controller.streamChunk("hello");
+
+    expect(speak).toHaveBeenCalledWith("hello", expect.any(Function));
+  });
+
+  it("queuing two chunks back-to-back results in sequential speak calls", () => {
+    const { controller, speak, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+
+    controller.streamChunk("first");
+    controller.streamChunk("second");
+
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(speak).toHaveBeenCalledWith("first", expect.any(Function));
+
+    const firstOnDone = speak.mock.calls[0]?.[1];
+    firstOnDone?.();
+
+    expect(speak).toHaveBeenCalledTimes(2);
+    expect(speak).toHaveBeenCalledWith("second", expect.any(Function));
+  });
+
+  it("endStream() while a chunk is in flight waits until the chunk finishes before transitioning back to listening", () => {
+    const { controller, speak, startListening, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+    controller.streamChunk("test");
+
+    const startListeningCallsBeforeEnd = startListening.mock.calls.length;
+    controller.endStream();
+
+    expect(controller.currentState.kind).toBe("speaking");
+    expect(startListening).toHaveBeenCalledTimes(startListeningCallsBeforeEnd);
+
+    const onDone = speak.mock.calls[0]?.[1];
+    onDone?.();
+
+    expect(controller.currentState.kind).toBe("listening");
+    expect(startListening).toHaveBeenCalledTimes(startListeningCallsBeforeEnd + 1);
+  });
+
+  it("endStream() with empty queue and nothing in flight immediately transitions back to listening", () => {
+    const { controller, speak, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+    controller.streamChunk("test");
+
+    const onDone = speak.mock.calls[0]?.[1];
+    onDone?.();
+
+    expect(controller.currentState.kind).toBe("speaking");
+
+    controller.endStream();
+
+    expect(controller.currentState.kind).toBe("listening");
+  });
+
+  it("isStreaming becomes false once the stream fully finishes", () => {
+    const { controller, speak, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+    controller.streamChunk("test");
+    controller.endStream();
+
+    expect(controller.isStreaming).toBe(true);
+
+    const onDone = speak.mock.calls[0]?.[1];
+    onDone?.();
+
+    expect(controller.isStreaming).toBe(false);
+  });
+
+  it("toggling voice mode off mid-stream stops speaking and resets streaming state", () => {
+    const { controller, speak, stopSpeaking, startListening, getCapturedHandlers } = createControllerWithFakes();
+
+    controller.toggle();
+    getCapturedHandlers()?.onResult("hello world", false);
+    vi.advanceTimersByTime(1000);
+    controller.beginStreamingReply();
+    controller.streamChunk("test");
+
+    const onDone = speak.mock.calls[0]?.[1];
+    const startListeningCallsBeforeToggleOff = startListening.mock.calls.length;
+    stopSpeaking.mockClear();
+
+    controller.toggle();
+
+    expect(stopSpeaking).toHaveBeenCalled();
+    expect(controller.isStreaming).toBe(false);
+
+    onDone?.();
+
+    expect(startListening).toHaveBeenCalledTimes(startListeningCallsBeforeToggleOff);
+  });
 });
