@@ -12,6 +12,7 @@ import { MachineController } from "../controllers/machineController";
 import { MachineStatusController } from "../controllers/machineStatusController";
 import { ProjectController, type ProjectTrustChoice } from "../controllers/projectController";
 import { PiWebStatusController } from "../controllers/piWebStatusController";
+import { AssistantMessageObserverController } from "../controllers/assistantMessageObserverController";
 import { PromptNotificationController } from "../controllers/promptNotificationController";
 import { SessionController } from "../controllers/sessionController";
 import { SessionNotificationController } from "../controllers/sessionNotificationController";
@@ -135,6 +136,11 @@ export class PiWebApp extends LitElement {
   private readonly promptNotifications = new PromptNotificationController({
     onActivate: ({ machineId, sessionId }) => { this.focusSessionFromNotification(machineId, sessionId); },
     onBackgroundError: (message, error) => { console.warn(message, error); },
+  });
+  private readonly assistantMessageObservers = new AssistantMessageObserverController({
+    onMessage: (event) => {
+      this.plugins.notifyAssistantMessage({ machine: pluginMachineFromState(this.state) }, event);
+    },
   });
   private readonly sessions = new SessionController(
     () => this.state,
@@ -1013,6 +1019,13 @@ export class PiWebApp extends LitElement {
     } else {
       if (event.type === "status.update") this.promptNotifications.handleStatusUpdate(machineId, event.status);
       this.sessions.applyGlobalEvent(event);
+      // Only the selected session's transcript is loaded client-side, so the
+      // assistant-message observer can only ever cover that one session —
+      // read `this.state.messages` after applyGlobalEvent so it reflects the
+      // status update just applied.
+      if (event.type === "status.update" && event.status.sessionId === this.state.selectedSession?.id) {
+        this.assistantMessageObservers.handleStatusUpdate(event.status, this.state.messages);
+      }
     }
   }
 
