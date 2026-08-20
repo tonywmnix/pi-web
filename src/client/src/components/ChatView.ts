@@ -5,6 +5,7 @@ import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
 import { messagePlainText } from "../chatMessages";
 import { writeClipboardText } from "../clipboard";
+import { isTextToSpeechSupported, speak, stopSpeaking } from "../textToSpeech";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
 import { shouldRequestEarlierMessages } from "../chatHistoryLoading";
 import { ChatScrollController, distanceFromScrollBottom, findFirstVisibleArticle, isNearScrollBottom, type ChatAnchorScrollPosition, type ChatScrollRestoreResult } from "../chatScrollPosition";
@@ -220,6 +221,7 @@ export class ChatView extends LitElement {
   @state() private zoomedImage: { src: string; alt: string } | undefined = undefined;
   @state() private expandedMetaKey: string | undefined;
   @state() private copiedMessageKey: string | undefined;
+  @state() private speakingMessageKey: string | undefined;
   @state() private currentConversationIndex: number | undefined;
   @state() private collapsedNotificationTargetKeys: ReadonlySet<string> = new Set();
   @state() private retainedEmptyNotificationTrayTargetKey: string | undefined;
@@ -301,6 +303,7 @@ export class ChatView extends LitElement {
       this.scrollToOpenDialogFrame = undefined;
     }
     if (this.conversationRailFrame !== undefined) cancelAnimationFrame(this.conversationRailFrame);
+    stopSpeaking();
     window.removeEventListener("resize", this.onViewportResize);
     window.removeEventListener("pagehide", this.onPageHide);
     window.visualViewport?.removeEventListener("resize", this.onViewportResize);
@@ -907,13 +910,23 @@ export class ChatView extends LitElement {
   }
 
   private renderMessageActions(message: ChatLine, key: string) {
-    if (!this.isCopyableMessage(message)) return null;
+    const copyable = this.isCopyableMessage(message);
+    const speakable = this.isSpeakableMessage(message);
+    if (!copyable && !speakable) return null;
     const copied = this.copiedMessageKey === key;
+    const speaking = this.speakingMessageKey === key;
     return html`
       <div class="msg-actions" aria-label="Message actions">
-        <button type="button" class="msg-action" title=${copied ? "Copied" : "Copy message"} aria-label=${`${copied ? "Copied" : "Copy"} ${message.role} message`} @click=${(event: MouseEvent) => { void this.copyMessage(message, key, event); }}>
-          <span aria-hidden="true">${copied ? "✓" : "⧉"}</span>
-        </button>
+        ${speakable ? html`
+          <button type="button" class="msg-action" title=${speaking ? "Stop reading" : "Read aloud"} aria-label=${`${speaking ? "Stop reading" : "Read"} ${message.role} message aloud`} @click=${(event: MouseEvent) => { this.toggleSpeakMessage(message, key, event); }}>
+            <span aria-hidden="true">${speaking ? "■" : "🔊"}</span>
+          </button>
+        ` : null}
+        ${copyable ? html`
+          <button type="button" class="msg-action" title=${copied ? "Copied" : "Copy message"} aria-label=${`${copied ? "Copied" : "Copy"} ${message.role} message`} @click=${(event: MouseEvent) => { void this.copyMessage(message, key, event); }}>
+            <span aria-hidden="true">${copied ? "✓" : "⧉"}</span>
+          </button>
+        ` : null}
       </div>
     `;
   }
@@ -944,6 +957,23 @@ export class ChatView extends LitElement {
     window.setTimeout(() => {
       if (this.copiedMessageKey === key) this.copiedMessageKey = undefined;
     }, 1200);
+  }
+
+  private isSpeakableMessage(message: ChatLine): boolean {
+    return message.role === "assistant" && isTextToSpeechSupported() && this.messageCopyText(message) !== "";
+  }
+
+  private toggleSpeakMessage(message: ChatLine, key: string, event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.speakingMessageKey === key) {
+      stopSpeaking();
+      this.speakingMessageKey = undefined;
+      return;
+    }
+    this.speakingMessageKey = key;
+    speak(this.messageCopyText(message), () => {
+      if (this.speakingMessageKey === key) this.speakingMessageKey = undefined;
+    });
   }
 
 
