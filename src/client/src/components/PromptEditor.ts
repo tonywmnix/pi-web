@@ -15,7 +15,7 @@ import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { promptEditorStyles, type CompletionItem } from "./shared";
-import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon, renderThinkingGauge, renderMicIcon, renderMicOffIcon, renderSpeakingIcon } from "./promptEditorIcons";
+import { renderAttachIcon, renderSendIcon, renderQueueIcon, renderStopIcon, renderThinkingGauge, renderMicIcon, renderMicOffIcon, renderSpeakingIcon } from "./promptEditorIcons";
 import { thinkingGauge, thinkingLevelLabel } from "../../../shared/thinkingLevels";
 import { VoiceModeController } from "../controllers/voiceModeController";
 import { isSpeechRecognitionSupported, startListening } from "../speechRecognition";
@@ -105,6 +105,16 @@ export class PromptEditor extends LitElement {
   protected override updated(changed: PropertyValues) {
     if (changed.has("disabled")) this.updateEditorDisabledState();
     if (changed.has("sessionId") || changed.has("machineId")) this.syncEditorDoc();
+    // Voice mode is scoped to whichever session/composer it was turned on
+    // for. If the editor becomes disabled (e.g. the session was archived) or
+    // the composer is repointed at a different session, an active voice mode
+    // would otherwise keep listening/speaking into a stale or unusable
+    // composer, so turn it off.
+    const becameDisabled = changed.has("disabled") && this.disabled;
+    const sessionChanged = changed.has("sessionId") || changed.has("machineId");
+    if ((becameDisabled || sessionChanged) && this.voiceMode.currentState.kind !== "off") {
+      this.voiceMode.toggle();
+    }
   }
 
   override disconnectedCallback(): void {
@@ -117,7 +127,8 @@ export class PromptEditor extends LitElement {
   override render() {
     const shellInputMode = this.currentInputMode.kind === "shell" ? this.currentInputMode : undefined;
     const shellMode = shellInputMode !== undefined;
-    const queuesInput = this.canSteer || this.isCompacting;
+    const queuesInput = this.isCompacting && !this.canSteer;
+    const steersInput = this.canSteer && !this.isCompacting;
     const busy = this.disabled || this.sending;
     return html`
       <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
@@ -132,8 +143,8 @@ export class PromptEditor extends LitElement {
         </div>
         <div class="actions">
           ${this.renderCompactStatus()}
-          <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send("followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-          ${this.canSteer && !this.isCompacting ? html`<button class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
+          <button class="icon-button send-button" ?disabled=${busy} title=${queuesInput ? "Queue until the current activity finishes" : steersInput ? "Steer the current response before the next model call" : "Send message"} aria-label=${queuesInput ? "Queue message" : steersInput ? "Steer current response" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+          ${steersInput ? html`<button class="icon-button queue-button" ?disabled=${busy} title="Queue until the current activity finishes" aria-label="Queue message" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
           ${isSpeechRecognitionSupported() && isTextToSpeechSupported() ? this.renderVoiceModeButton() : null}
           <button class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop || this.stopping} title=${this.stopping ? "Stopping… waiting for the current turn to unwind" : this.canStop ? "Stop current work and clear queued messages" : "Nothing running"} aria-label=${this.stopping ? "Stopping" : "Stop current work"} @click=${() => this.onStop?.()}>${renderStopIcon()}</button>
         </div>
@@ -181,7 +192,7 @@ export class PromptEditor extends LitElement {
 
   private sendVoiceTranscript(transcript: string): void {
     this.replaceText(transcript);
-    this.send("followUp");
+    this.send(this.canSteer ? "steer" : "followUp");
   }
 
   private renderVoiceModeButton() {
@@ -478,7 +489,7 @@ export class PromptEditor extends LitElement {
     if (!shouldSendPromptOnEnterShortcut(shiftKey, this.mobilePromptEnterMedia, readPromptEnterPreference())) {
       return insertNewlineContinueMarkup(view) || insertNewlineAndIndent(view);
     }
-    this.send(this.canSteer || this.isCompacting ? "followUp" : undefined);
+    this.send(this.canSteer ? "steer" : this.isCompacting ? "followUp" : undefined);
     return true;
   }
 
