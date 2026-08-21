@@ -1017,6 +1017,7 @@ export class ChatView extends LitElement {
     }
     if (part.type === "toolCall") return html`<div class="part tool-line">▶ ${part.toolName}<span class="summary">${part.summary}</span></div>`;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
+    if (part.type === "audio") return html`<audio class="part mcp-audio" controls preload="none" src=${resolveMcpAudioUrl(part.filename)}></audio>`;
     if (part.type === "toolResult") {
       const audioMarker = parseMcpAudioMarker(part.text);
       const displayText = audioMarker?.textWithoutMarker ?? part.text;

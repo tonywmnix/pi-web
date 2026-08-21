@@ -206,6 +206,50 @@ describe("chat message normalization", () => {
     ]);
   });
 
+  it("duplicates an AUDIO_FILE marker from a tool execution onto the next assistant reply", () => {
+    // The tool card carrying the marker stays inside a collapsed "events" group by default,
+    // so the player is easy to miss there. Promoting a copy onto the assistant's own text
+    // reply (the always-visible bubble) makes it discoverable without expanding anything.
+    const lines = normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "mcp-1", name: "mcp", arguments: { tool: "generate_music" } }] },
+      {
+        role: "toolResult",
+        toolCallId: "mcp-1",
+        toolName: "mcp",
+        content: [{ type: "text", text: "AUDIO_FILE: clip.mp3\nSaved audio to /out/clip.mp3" }],
+        isError: false,
+      },
+      { role: "assistant", content: "Generated a clip." },
+    ]);
+
+    const assistantLine = lines.find((line) => line.role === "assistant" && line.parts.some((part) => part.type === "text"));
+    expect(assistantLine?.parts).toContainEqual({ type: "audio", filename: "clip.mp3" });
+
+    // The tool-execution card itself is untouched -- it keeps carrying the marker in its own
+    // resultText for ToolExecutionView to render its own (duplicate) player.
+    const toolLine = lines.find((line) => line.role === "tool");
+    const toolPart = toolLine?.parts.find((part) => part.type === "toolExecution");
+    expect(toolPart?.type === "toolExecution" ? toolPart.resultText : undefined).toContain("AUDIO_FILE: clip.mp3");
+  });
+
+  it("clears a pending audio marker across a user message instead of attaching it to a later assistant reply", () => {
+    const lines = normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "mcp-1", name: "mcp", arguments: { tool: "generate_music" } }] },
+      {
+        role: "toolResult",
+        toolCallId: "mcp-1",
+        toolName: "mcp",
+        content: [{ type: "text", text: "AUDIO_FILE: clip.mp3\nSaved audio to /out/clip.mp3" }],
+        isError: false,
+      },
+      { role: "user", content: "thanks, unrelated question now" },
+      { role: "assistant", content: "Sure, here's an answer." },
+    ]);
+
+    const laterAssistantLine = lines.find((line) => line.parts.some((part) => part.type === "text" && part.text === "Sure, here's an answer."));
+    expect(laterAssistantLine?.parts.some((part) => part.type === "audio")).toBe(false);
+  });
+
   it("formats bash execution records as bash chat lines", () => {
     expect(normalizeMessage({
       role: "bashExecution",

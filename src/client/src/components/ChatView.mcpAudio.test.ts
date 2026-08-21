@@ -48,6 +48,20 @@ describe("ChatView tool-result audio marker rendering", () => {
     expect(() => templateValueAfterMarker(rendered, "src=")).toThrow();
     expect(templateText(rendered)).toContain("plain output");
   });
+
+  // The `audio` part is chatMessages.ts's promoted duplicate of a tool result's AUDIO_FILE
+  // marker, attached directly to the assistant's own reply so it isn't hidden behind the
+  // collapsed "events" group. It carries only a filename -- the widget is built the same way
+  // as the toolResult/toolExecution marker widgets, just from a dedicated part type instead of
+  // parsing a text marker at render time.
+  it("renders an audio widget for a promoted audio part on an assistant reply", () => {
+    const view = new ChatView();
+    const part = { type: "audio", filename: "clip.mp3" } as const;
+
+    const rendered = renderPart(view, part);
+
+    expect(templateValueAfterMarker(rendered, "src=")).toBe(resolveMcpAudioUrl("clip.mp3"));
+  });
 });
 
 type RenderPart = (this: ChatView, part: ChatLine["parts"][number], message?: ChatLine) => TemplateResult;

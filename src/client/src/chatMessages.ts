@@ -1,9 +1,47 @@
 import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
 import type { ChatLine, ChatPart, ToolExecutionPart, ToolPreview } from "./components/shared";
+import { parseMcpAudioMarker } from "./mcpAudioMarker";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
-  return coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
+  const coalesced = coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0);
+  return attachAudioMarkersToAssistantReplies(coalesced);
+}
+
+/**
+ * Surfaces a generated audio clip on the assistant's own reply bubble, not just inside the
+ * (collapsed-by-default) tool-execution card. An `AUDIO_FILE:` marker on a tool result is easy
+ * to miss buried in a collapsed "events" group, so once a turn's tool executions carry one, the
+ * next assistant text reply in that same turn gets a duplicate `audio` part appended. The tool
+ * card keeps its own player too -- this only adds a second, more visible one.
+ */
+function attachAudioMarkersToAssistantReplies(lines: ChatLine[]): ChatLine[] {
+  const pendingFilenames: string[] = [];
+
+  return lines.map((line) => {
+    if (line.role === "user") {
+      pendingFilenames.length = 0;
+      return line;
+    }
+
+    if (line.role === "tool") {
+      for (const part of line.parts) {
+        const resultText = part.type === "toolExecution" ? part.resultText : part.type === "toolResult" ? part.text : undefined;
+        if (resultText === undefined) continue;
+        const marker = parseMcpAudioMarker(resultText);
+        if (marker !== undefined) pendingFilenames.push(marker.filename);
+      }
+      return line;
+    }
+
+    if (line.role === "assistant" && pendingFilenames.length > 0) {
+      const audioParts: ChatPart[] = pendingFilenames.map((filename) => ({ type: "audio", filename }));
+      pendingFilenames.length = 0;
+      return { ...line, parts: [...line.parts, ...audioParts] };
+    }
+
+    return line;
+  });
 }
 
 /**
