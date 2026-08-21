@@ -69,6 +69,22 @@ describe("groupChatMessages", () => {
     ]);
   });
 
+  // Regression: `audio` is chatMessages.ts's promoted duplicate of an AUDIO_FILE marker,
+  // attached to the assistant's own text reply specifically so it stays visible instead of
+  // being pulled into the collapsed "events" group with the tool call that produced it.
+  // isReadablePart must treat it the same as image/skillRead/askUserRecord or this silently
+  // defeats that promotion.
+  it("keeps promoted audio parts visible outside collapsed event groups", () => {
+    const audio = { type: "audio" as const, filename: "clip.mp3" };
+    const messages: ChatLine[] = [
+      { role: "assistant", parts: [{ type: "text", text: "Generated a clip." }, audio] },
+    ];
+
+    expect(groupChatMessages(messages)).toEqual([
+      { kind: "message", index: 0, message: { role: "assistant", parts: [{ type: "text", text: "Generated a clip." }, audio] } },
+    ]);
+  });
+
   it("keeps user images as ordinary messages", () => {
     const image = { type: "image" as const, mimeType: "image/png", data: "QUJD" };
     const message: ChatLine = { role: "user", parts: [image] };
