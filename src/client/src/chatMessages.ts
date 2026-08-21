@@ -276,9 +276,14 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       }
 
       if (part.type === "toolResult") {
+        // A single tool call can produce multiple text content parts in its MCP-level
+        // result (e.g. the mcp gateway tool synthesizes a placeholder part alongside the
+        // real text when a result contains non-text content types like audio). Keep the
+        // pendingTools entry after a merge so every such part folds into the same card
+        // instead of the first consuming it and later ones falling through as orphaned
+        // passthrough parts.
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
         if (target !== undefined && mergeToolResultInto(result, target, part)) {
-          pendingTools.delete(part.toolCallId ?? "");
           continue;
         }
       }
@@ -308,10 +313,16 @@ function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; par
   const current = line?.parts[target.partIndex];
   if (line === undefined || current?.type !== "toolExecution") return false;
   const preview = previewFromDetails(result.details) ?? current.preview;
+  // A prior merge for this same toolCallId already landed (status advanced past
+  // pending/running); concatenate rather than overwrite so no text part is lost.
+  const alreadyMerged = current.status === "success" || current.status === "error";
+  const resultText = alreadyMerged && current.resultText !== undefined && current.resultText !== ""
+    ? `${current.resultText}\n${result.text}`
+    : result.text;
   const next: ToolExecutionPart = {
     ...current,
-    status: result.isError ? "error" : "success",
-    resultText: result.text,
+    status: result.isError || current.status === "error" ? "error" : "success",
+    resultText,
     ...(result.content === undefined ? {} : { content: result.content }),
     ...(result.details === undefined ? {} : { details: result.details }),
     ...(preview === undefined ? {} : { preview }),

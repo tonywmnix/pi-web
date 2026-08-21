@@ -167,6 +167,45 @@ describe("chat message normalization", () => {
     ]);
   });
 
+  it("merges every text content part of a tool result into one execution card, not just the first", () => {
+    // The mcp gateway tool synthesizes a placeholder text part ("[Audio content: ...]")
+    // ahead of the tool's real text content when a result contains non-text content types
+    // (e.g. an MCP audio block). Both parts arrive as separate content items on the same
+    // toolResult message and must both fold into the single tool-execution card; losing
+    // the second part would silently drop the real result text (including any AUDIO_FILE
+    // marker line) into an orphaned, easy-to-miss passthrough block instead.
+    expect(normalizeMessages([
+      { role: "assistant", content: [{ type: "toolCall", id: "mcp-1", name: "mcp", arguments: { tool: "generate_music" } }] },
+      {
+        role: "toolResult",
+        toolCallId: "mcp-1",
+        toolName: "mcp",
+        content: [
+          { type: "text", text: "[Audio content: audio/mpeg]" },
+          { type: "text", text: "AUDIO_FILE: clip.mp3\nSaved audio to /out/clip.mp3" },
+        ],
+        isError: false,
+      },
+    ])).toEqual([
+      {
+        role: "tool",
+        parts: [{
+          type: "toolExecution",
+          toolCallId: "mcp-1",
+          toolName: "mcp",
+          summary: "tool: generate_music",
+          args: { tool: "generate_music" },
+          status: "success",
+          resultText: "[Audio content: audio/mpeg]\nAUDIO_FILE: clip.mp3\nSaved audio to /out/clip.mp3",
+          content: [
+            { type: "text", text: "[Audio content: audio/mpeg]" },
+            { type: "text", text: "AUDIO_FILE: clip.mp3\nSaved audio to /out/clip.mp3" },
+          ],
+        }],
+      },
+    ]);
+  });
+
   it("formats bash execution records as bash chat lines", () => {
     expect(normalizeMessage({
       role: "bashExecution",
