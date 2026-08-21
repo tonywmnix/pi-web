@@ -47,3 +47,8 @@ export function workspaceFilePreviewPath(projectId: string, workspaceId: string,
 export function workspaceFilePreviewUrl(projectId: string, workspaceId: string, path: string, options?: WorkspaceFilePreviewUrlOptions): string {
   return resolveAppUrl(workspaceFilePreviewPath(projectId, workspaceId, path, options));
 }
+
+/** Browser-ready URL for an audio file an MCP tool wrote via the `AUDIO_FILE:` marker convention. */
+export function resolveMcpAudioUrl(filename: string): string {
+  return resolveAppUrl(`api/mcp-audio/${encodeURIComponent(filename)}`);
+}

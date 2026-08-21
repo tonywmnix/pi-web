@@ -4,6 +4,8 @@ import { repeat } from "lit/directives/repeat.js";
 import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
 import { messagePlainText } from "../chatMessages";
+import { parseMcpAudioMarker } from "../mcpAudioMarker";
+import { resolveMcpAudioUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { isTextToSpeechSupported, speak, stopSpeaking } from "../textToSpeech";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
@@ -1015,12 +1017,17 @@ export class ChatView extends LitElement {
     }
     if (part.type === "toolCall") return html`<div class="part tool-line">▶ ${part.toolName}<span class="summary">${part.summary}</span></div>`;
     if (part.type === "toolExecution") return html`<tool-execution-view class="part" .execution=${part}></tool-execution-view>`;
-    if (part.type === "toolResult") return html`
-      <details class="part" ?open=${part.isError}>
-        <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
-        <formatted-text .text=${part.text}></formatted-text>
-      </details>
-    `;
+    if (part.type === "toolResult") {
+      const audioMarker = parseMcpAudioMarker(part.text);
+      const displayText = audioMarker?.textWithoutMarker ?? part.text;
+      return html`
+        <details class="part" ?open=${part.isError}>
+          <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
+          ${audioMarker === undefined ? null : html`<audio class="mcp-audio" controls preload="none" src=${resolveMcpAudioUrl(audioMarker.filename)}></audio>`}
+          ${displayText === "" ? null : html`<formatted-text .text=${displayText}></formatted-text>`}
+        </details>
+      `;
+    }
     return null;
   }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { workspaceFilePreviewPath, workspaceFilePreviewUrl } from "./urls";
+import { resolveMcpAudioUrl, workspaceFilePreviewPath, workspaceFilePreviewUrl } from "./urls";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -32,5 +32,16 @@ describe("workspace file preview URLs", () => {
     });
 
     expect(url).toBe("https://pi.example.test/nested/pi-web/api/machines/remote%20%2F%3F/projects/project%20%2F%3F/workspaces/workspace%20%2F%3F/file/preview?path=docs%2Freport+%231.html&download=1");
+  });
+});
+
+describe("resolveMcpAudioUrl", () => {
+  it("encodes the filename once under a canonical nested deployment", () => {
+    vi.stubEnv("BASE_URL", "./");
+    vi.stubGlobal("document", { baseURI: "https://pi.example.test/nested/pi-web/" });
+
+    const url = resolveMcpAudioUrl("2026-08-21T03-36-33-985Z_hexgrad_kokoro-82m.mp3");
+
+    expect(url).toBe("https://pi.example.test/nested/pi-web/api/mcp-audio/2026-08-21T03-36-33-985Z_hexgrad_kokoro-82m.mp3");
   });
 });
