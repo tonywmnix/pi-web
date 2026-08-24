@@ -20,6 +20,21 @@ describe("SessionController live events", () => {
     expect(socket.revalidateCount).toBe(1);
   });
 
+  it("notifies the host when the daemon scope revision changes", () => {
+    const revisions: number[] = [];
+    const controller = new SessionController(
+      () => ({ ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] }),
+      () => undefined,
+      () => undefined,
+      undefined,
+      { socket: new FakeSocket(), onModelScopeChanged: (revision) => { revisions.push(revision); } },
+    );
+
+    controller.applyGlobalEvent({ type: "models.changed", revision: 4 });
+
+    expect(revisions).toEqual([4]);
+  });
+
   it("coalesces rapid status updates into a single state write per frame", () => {
     const setStateCalls: Partial<AppState>[] = [];
     let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };

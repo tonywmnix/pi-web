@@ -7,11 +7,12 @@ import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, type FileSuggestion, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import type { PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, type CapturedAttachment } from "../promptAttachmentCapture";
+import { capturePromptAttachments, effectivePromptAttachmentDelivery, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery } from "../promptAttachmentCapture";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
 import { detectPromptCompletionTrigger, fileCompletionInsertText, modelCompletionChoices, type PromptCompletionTrigger } from "../promptCompletions";
 import { clearDraft, loadDraft, saveDraft } from "../promptDraftStorage";
+import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, readPromptEnterPreference, shouldSendPromptOnEnterShortcut, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { promptEditorStyles, type CompletionItem } from "./shared";
@@ -21,8 +22,6 @@ import { VoiceModeController } from "../controllers/voiceModeController";
 import { isSpeechRecognitionSupported, startListening } from "../speechRecognition";
 import { isTextToSpeechSupported, speak, stopSpeaking } from "../textToSpeech";
 import "./AutocompleteMenu";
-
-type PendingAttachment = CapturedAttachment & { id: string };
 
 @customElement("prompt-editor")
 export class PromptEditor extends LitElement {
@@ -56,7 +55,7 @@ export class PromptEditor extends LitElement {
   @state() private currentInputMode: InputMode = { kind: "normal" };
   @state() private completions: CompletionItem[] = [];
   @state() private selectedIndex = 0;
-  @state() private attachments: PendingAttachment[] = [];
+  @state() private attachments: readonly PendingAttachment[] = [];
   @state() private attachmentDelivery: PromptAttachmentDelivery = loadAttachmentDelivery();
   @state() private attachmentError: string | undefined = undefined;
   private attachmentSeq = 0;
@@ -79,9 +78,14 @@ export class PromptEditor extends LitElement {
     const previousSessionId = changed.has("sessionId") ? changed.get("sessionId") : this.sessionId;
     const previousMachineId = changed.has("machineId") ? changed.get("machineId") : this.machineId;
     const previousKey = draftStorageKey(previousMachineId, previousSessionId);
-    if (previousKey !== undefined) saveDraft(previousKey, this.draft);
+    if (previousKey !== undefined) {
+      saveDraft(previousKey, this.draft);
+      saveStagedAttachments(previousKey, this.attachments);
+    }
     const currentKey = draftStorageKey(this.machineId, this.sessionId);
     this.draft = currentKey !== undefined ? loadDraft(currentKey) : "";
+    this.attachments = currentKey !== undefined ? loadStagedAttachments(currentKey) : [];
+    this.attachmentError = undefined;
     this.currentInputMode = inputModeForDraft(this.draft);
     this.completions = [];
     this.selectedIndex = 0;
@@ -565,7 +569,10 @@ export class PromptEditor extends LitElement {
     this.draft = "";
     this.currentInputMode = { kind: "normal" };
     const key = draftStorageKey(this.machineId, this.sessionId);
-    if (key !== undefined) clearDraft(key);
+    if (key !== undefined) {
+      clearDraft(key);
+      clearStagedAttachments(key);
+    }
     this.completions = [];
     this.attachments = [];
     this.attachmentError = undefined;
