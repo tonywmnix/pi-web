@@ -5,7 +5,8 @@ import { ChatDisclosureController } from "../chatDisclosure";
 import { groupChatMessages, summarizeChatGroup, type ChatGroup } from "../chatGroups";
 import { messagePlainText } from "../chatMessages";
 import { parseMcpAudioMarker } from "../mcpAudioMarker";
-import { resolveMcpAudioUrl } from "../api/urls";
+import { parseMcpUiMarker } from "../mcpUiMarker";
+import { resolveMcpAudioUrl, resolveMcpUiUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { isTextToSpeechSupported, speak, stopSpeaking } from "../textToSpeech";
 import { capturePrependScrollAnchor, PREPEND_RESTORE_SETTLE_FRAMES, restorePrependScrollAnchor, type PrependScrollAnchor } from "../chatScrollAnchoring";
@@ -1020,11 +1021,13 @@ export class ChatView extends LitElement {
     if (part.type === "audio") return html`<audio class="part mcp-audio" controls preload="none" src=${resolveMcpAudioUrl(part.filename)}></audio>`;
     if (part.type === "toolResult") {
       const audioMarker = parseMcpAudioMarker(part.text);
-      const displayText = audioMarker?.textWithoutMarker ?? part.text;
+      const uiMarker = audioMarker === undefined ? parseMcpUiMarker(part.text) : undefined;
+      const displayText = audioMarker?.textWithoutMarker ?? uiMarker?.textWithoutMarker ?? part.text;
       return html`
         <details class="part" ?open=${part.isError}>
           <summary>${part.isError ? "✖" : "✓"} ${part.toolName} result</summary>
           ${audioMarker === undefined ? null : html`<audio class="mcp-audio" controls preload="none" src=${resolveMcpAudioUrl(audioMarker.filename)}></audio>`}
+          ${uiMarker === undefined ? null : html`<iframe class="mcp-ui" src=${resolveMcpUiUrl(uiMarker.filename)} sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="MCP UI resource"></iframe>`}
           ${displayText === "" ? null : html`<formatted-text .text=${displayText}></formatted-text>`}
         </details>
       `;

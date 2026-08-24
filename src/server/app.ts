@@ -18,6 +18,7 @@ import { loadServerPluginRecoveryConfig } from "../serverPluginRecovery.js";
 import { registerSessionProxyRoutes, type SessionProxyDaemon } from "./sessiond/sessionProxyRoutes.js";
 import { registerWorkspaceExplorerRoutes } from "./workspaceExplorerRoutes.js";
 import { registerMcpAudioRoutes } from "./mcpAudio/mcpAudioRoutes.js";
+import { registerMcpUiRoutes } from "./mcpUi/mcpUiRoutes.js";
 import { registerProjectTrustRoutes } from "./projectTrustRoutes.js";
 import { registerTerminalProxyRoutes } from "./terminalProxyRoutes.js";
 import { registerWorkspaceDeletionRoutes } from "./workspaces/workspaceDeletionRoutes.js";
@@ -251,6 +252,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api", { config: configService });
   registerWorkspaceExplorerRoutes(app, projects, workspaces, "/api/machines/local", { config: configService });
   registerMcpAudioRoutes(app);
+  registerMcpUiRoutes(app);
   const projectTrustDeps = {
     agentDir: async () => (await requireActiveAgentProfile(agentProfileProvider)).dir,
   };

@@ -52,3 +52,8 @@ export function workspaceFilePreviewUrl(projectId: string, workspaceId: string, 
 export function resolveMcpAudioUrl(filename: string): string {
   return resolveAppUrl(`api/mcp-audio/${encodeURIComponent(filename)}`);
 }
+
+/** Browser-ready URL for an HTML UI resource an MCP tool wrote via the `UI_HTML_FILE:` marker convention. */
+export function resolveMcpUiUrl(filename: string): string {
+  return resolveAppUrl(`api/mcp-ui/${encodeURIComponent(filename)}`);
+}

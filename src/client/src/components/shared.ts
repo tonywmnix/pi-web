@@ -425,6 +425,7 @@ export const chatStyles = css`
   .group-body { padding: 0 12px 12px; }
   .chat-image { display: block; max-width: 100%; max-height: 320px; margin: 8px 0 0; border: 1px solid var(--pi-border-muted); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
   .mcp-audio { display: block; width: 100%; max-width: 360px; margin: 8px 0 0; }
+  .mcp-ui { display: block; width: 100%; height: 360px; margin: 8px 0 0; border: 1px solid var(--pi-border-muted); border-radius: 8px; background: #fff; }
   .chat-image:focus-visible { outline: 2px solid var(--pi-accent, var(--pi-success-border)); outline-offset: 2px; }
   dialog.image-zoom { position: fixed; inset: 0; margin: auto; max-width: calc(96vw - env(safe-area-inset-left) - env(safe-area-inset-right)); max-height: calc(96vh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); width: fit-content; height: fit-content; padding: 0; border: none; background: transparent; overflow: visible; }
   dialog.image-zoom[open] { display: flex; }

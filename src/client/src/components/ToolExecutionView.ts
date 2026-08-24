@@ -1,8 +1,9 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { resolveMcpAudioUrl } from "../api/urls";
+import { resolveMcpAudioUrl, resolveMcpUiUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { parseMcpAudioMarker } from "../mcpAudioMarker";
+import { parseMcpUiMarker } from "../mcpUiMarker";
 import type { ToolExecutionPart } from "./shared";
 
 const MAX_COLLAPSED_DIFF_LINES = 180;
@@ -30,8 +31,9 @@ export class ToolExecutionView extends LitElement {
     const diffStats = visibleDiff === undefined ? undefined : countDiffLines(visibleDiff);
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
     const audioMarker = execution.resultText === undefined ? undefined : parseMcpAudioMarker(execution.resultText);
+    const uiMarker = execution.resultText === undefined || audioMarker !== undefined ? undefined : parseMcpUiMarker(execution.resultText);
     const errorText = execution.status === "error" ? execution.resultText : preview?.error;
-    const bodyText = visibleDiff === undefined ? (audioMarker?.textWithoutMarker ?? execution.resultText) : undefined;
+    const bodyText = visibleDiff === undefined ? (audioMarker?.textWithoutMarker ?? uiMarker?.textWithoutMarker ?? execution.resultText) : undefined;
     const target = toolTarget(execution, path);
 
     return html`
@@ -51,6 +53,7 @@ export class ToolExecutionView extends LitElement {
 
         ${previewMismatch ? html`<p class="notice">Applied diff differs from the preview.</p>` : null}
         ${audioMarker === undefined ? null : html`<audio class="mcp-audio" controls preload="none" src=${resolveMcpAudioUrl(audioMarker.filename)}></audio>`}
+        ${uiMarker === undefined ? null : html`<iframe class="mcp-ui" src=${resolveMcpUiUrl(uiMarker.filename)} sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="MCP UI resource"></iframe>`}
         ${errorText === undefined || errorText === "" ? null : html`<pre class="error-text">${errorText}</pre>`}
         ${visibleDiff === undefined ? this.renderTextBody(bodyText, execution.status === "error", target) : this.renderDiffBody(visibleDiff, actualDiff === undefined ? "Preview diff" : "Applied diff", target)}
       </section>
@@ -148,6 +151,7 @@ export class ToolExecutionView extends LitElement {
     .status-label { text-transform: uppercase; letter-spacing: .04em; color: var(--pi-muted); }
     .notice { margin: 0; color: var(--pi-warning); }
     .mcp-audio { display: block; width: 100%; max-width: 360px; margin: 0 0 4px; }
+    .mcp-ui { display: block; width: 100%; height: 360px; margin: 0 0 4px; border: 1px solid var(--pi-border-muted); border-radius: 8px; background: #fff; }
     .muted { margin: 0; color: var(--pi-muted); }
     .error-text { margin: 0; border: 1px solid var(--pi-danger); border-radius: 7px; background: color-mix(in srgb, var(--pi-danger) 10%, var(--pi-bg)); color: var(--pi-danger); padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .text-body { border-top: 1px solid var(--pi-border-muted); padding-top: 6px; }
