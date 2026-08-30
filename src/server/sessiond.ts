@@ -52,6 +52,9 @@ import { registerWorkspaceRemovalRoutes } from "./sessiond/workspaceRemovalRoute
 import { createWorkspaceProviderRuntimeSnapshot } from "./workspaces/workspaceCatalog.js";
 import { installWebSocketHeartbeat } from "./webSocketHeartbeat.js";
 import { WorkspaceRemovalService } from "./workspaces/workspaceRemovalService.js";
+import { startEventLoopWedgeMonitor } from "./sessiond/eventLoopWedgeMonitor.js";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 const daemonEnvironment: NodeJS.ProcessEnv = Object.freeze({ ...process.env });
 const serverPluginRecovery = loadServerPluginRecoveryConfig({ env: daemonEnvironment });
@@ -166,6 +169,10 @@ async function createSessionDaemonRuntime() {
   // or the profile dismissed it (removed it on purpose) before. Deliberately
   // not awaited: reconciliation catches and logs its own failures internally,
   // and a slow or failed install must never delay or block daemon startup.
+  const wedgeMonitor = startEventLoopWedgeMonitor({
+    logger: app.log,
+    diagnosticsDir: join(homedir(), ".pi-web", "diagnostics"),
+  });
   void reconcileAutoInstallablePiPackages({
     profileDir: activeAgentProfile.dir,
     packageProvider: new DefaultPiPackageProvider(process.cwd(), activeAgentProfile.dir),
@@ -307,6 +314,7 @@ async function createSessionDaemonRuntime() {
     const shutdown = async (): Promise<void> => {
       if (disposed) return;
       disposed = true;
+      await wedgeMonitor.dispose();
       await runSessionDaemonShutdown({
         logger: app.log,
         dependencies: {
