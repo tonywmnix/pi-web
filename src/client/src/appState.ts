@@ -14,6 +14,8 @@ export interface AppState {
   /** Latest per-machine status tree published by each machine's daemon. */
   machineStatusSnapshots: Record<string, MachineStatusSnapshot>;
   projects: Project[];
+  /** Project id → timestamp of that project's most recent session activity, backing the "recent" project sort. Populated lazily and best-effort; a project absent here just falls back to its `createdAt`. */
+  projectActivity: Record<string, string>;
   workspaces: Workspace[];
   sessions: SessionInfo[];
   messages: ChatLine[];
@@ -158,6 +160,7 @@ export function initialAppState(): AppState {
     machineRuntimes: {},
     machineStatusSnapshots: {},
     projects: [],
+    projectActivity: {},
     workspaces: [],
     sessions: [],
     messages: [],

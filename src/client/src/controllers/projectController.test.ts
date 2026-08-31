@@ -35,6 +35,7 @@ describe("ProjectController", () => {
           closeProject: vi.fn(),
           setWorkspaceTrust: vi.fn(),
           setProjectColor: vi.fn(),
+          sessions: vi.fn().mockResolvedValue([]),
         },
       },
     );
@@ -67,6 +68,7 @@ describe("ProjectController", () => {
           closeProject: vi.fn(),
           setWorkspaceTrust: vi.fn(),
           setProjectColor: vi.fn(),
+          sessions: vi.fn().mockResolvedValue([]),
         },
       },
     );
@@ -96,6 +98,7 @@ describe("ProjectController", () => {
           closeProject: vi.fn(),
           setWorkspaceTrust,
           setProjectColor: vi.fn(),
+          sessions: vi.fn().mockResolvedValue([]),
         },
       },
     );
@@ -125,6 +128,7 @@ describe("ProjectController", () => {
           closeProject: vi.fn(),
           setWorkspaceTrust,
           setProjectColor: vi.fn(),
+          sessions: vi.fn().mockResolvedValue([]),
         },
       },
     );
@@ -167,6 +171,7 @@ describe("ProjectController", () => {
           closeProject: vi.fn().mockResolvedValue(undefined),
           setWorkspaceTrust: vi.fn(),
           setProjectColor: vi.fn(),
+          sessions: vi.fn().mockResolvedValue([]),
         },
       },
     );
@@ -177,5 +182,34 @@ describe("ProjectController", () => {
     expect(state.projects).toEqual([remainingProject]);
     expect(state.workspacesByProjectId[closedProject.id]).toBeUndefined();
     expect(clearSelection).toHaveBeenCalledOnce();
+  });
+
+  it("fetches each project's last session activity after a reload", async () => {
+    const busyProject = project("busy", "/busy");
+    const idleProject = project("idle", "/idle");
+    let state: AppState = { ...initialAppState() };
+    const controller = new ProjectController(
+      () => state,
+      (patch) => { state = { ...state, ...patch }; },
+      { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
+      {
+        api: {
+          projects: vi.fn().mockResolvedValue([busyProject, idleProject]),
+          addProject: vi.fn(),
+          closeProject: vi.fn(),
+          setWorkspaceTrust: vi.fn(),
+          setProjectColor: vi.fn(),
+          sessions: vi.fn((cwd: string) => Promise.resolve(
+            cwd === busyProject.path
+              ? [{ id: "s1", cwd, path: "s1", created: "2026-01-01T00:00:00.000Z", modified: "2026-06-01T00:00:00.000Z", messageCount: 1, firstMessage: "hi" }]
+              : [],
+          )),
+        },
+      },
+    );
+
+    await controller.loadProjects();
+
+    expect(state.projectActivity).toEqual({ busy: "2026-06-01T00:00:00.000Z" });
   });
 });

@@ -27,25 +27,34 @@ export function isProjectSortMode(value: unknown): value is ProjectSortMode {
   return PROJECT_SORT_MODES.some((mode) => mode === value);
 }
 
+/** Project id → timestamp of that project's most recent session activity, when known. */
+export type ProjectActivity = Readonly<Record<string, string>>;
+
 /**
  * Returns a sorted copy; the input order is preserved for `added` and used as the
  * tie-breaker elsewhere so equal keys never reshuffle between renders.
+ *
+ * `activity` drives `recent`: a project with a known last-conversation timestamp
+ * sorts by that instead of by when it was registered, so "recent" tracks actual
+ * usage rather than add order. A project missing from `activity` (not yet
+ * fetched, or no sessions at all) falls back to its `createdAt`.
  */
-export function sortProjects(projects: readonly Project[], mode: ProjectSortMode): Project[] {
+export function sortProjects(projects: readonly Project[], mode: ProjectSortMode, activity: ProjectActivity = {}): Project[] {
   if (mode === "added") return [...projects];
   const indexed = projects.map((project, index) => ({ project, index }));
-  indexed.sort((a, b) => compare(a.project, b.project, mode) || a.index - b.index);
+  indexed.sort((a, b) => compare(a.project, b.project, mode, activity) || a.index - b.index);
   return indexed.map((entry) => entry.project);
 }
 
-function compare(a: Project, b: Project, mode: Exclude<ProjectSortMode, "added">): number {
+function compare(a: Project, b: Project, mode: Exclude<ProjectSortMode, "added">, activity: ProjectActivity): number {
   if (mode === "name") return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
-  return createdAtValue(b) - createdAtValue(a);
+  return recencyValue(b, activity) - recencyValue(a, activity);
 }
 
-/** Unparseable timestamps sort last rather than poisoning the comparison with NaN. */
-function createdAtValue(project: Project): number {
-  const value = Date.parse(project.createdAt);
+/** Unparseable or missing timestamps sort last rather than poisoning the comparison with NaN. */
+function recencyValue(project: Project, activity: ProjectActivity): number {
+  const raw = activity[project.id] ?? project.createdAt;
+  const value = Date.parse(raw);
   return Number.isNaN(value) ? Number.NEGATIVE_INFINITY : value;
 }
 

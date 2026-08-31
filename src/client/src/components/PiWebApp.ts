@@ -1353,6 +1353,7 @@ export class PiWebApp extends LitElement {
         .onSelectMachine=${(machine: Machine) => this.selectNavigationItem("machines", "projects", () => this.selectMachineWithMemory(machine))}
         .onRemoveMachine=${(machine: Machine) => { void this.removeMachine(machine); }}
         .projects=${this.state.projects}
+        .projectActivity=${this.state.projectActivity}
         .selectedProject=${this.state.selectedProject}
         .workspaces=${this.state.workspaces}
         .selectedWorkspace=${this.state.selectedWorkspace}

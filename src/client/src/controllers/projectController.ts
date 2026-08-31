@@ -1,4 +1,4 @@
-import { api as defaultApi, type Project } from "../api";
+import { api as defaultApi, type Project, type SessionInfo } from "../api";
 import { selectedMachineId, type GetState, type SetState } from "./types";
 import type { WorkspaceController } from "./workspaceController";
 
@@ -13,11 +13,11 @@ export interface ProjectTrustChoice {
 }
 
 export interface ProjectControllerDependencies {
-  api?: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor">;
+  api?: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor" | "sessions">;
 }
 
 export class ProjectController {
-  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor">;
+  private readonly api: Pick<typeof defaultApi, "projects" | "addProject" | "closeProject" | "setWorkspaceTrust" | "setProjectColor" | "sessions">;
 
   constructor(
     private readonly getState: GetState,
@@ -42,6 +42,32 @@ export class ProjectController {
     } finally {
       if (selectedMachineId(this.getState()) === machineId) this.setState({ isLoadingProjects: false });
     }
+    await this.refreshProjectActivity(machineId);
+  }
+
+  /**
+   * Best-effort per-project "last conversation" timestamps for the `recent`
+   * project sort. Each project is queried by its own path only — a secondary
+   * worktree workspace under the same project is not included — which covers
+   * the common single-workspace project without a full workspace fan-out.
+   * Fetch failures for individual projects are swallowed so one unreachable
+   * project cannot blank the whole sort.
+   */
+  private async refreshProjectActivity(machineId: string): Promise<void> {
+    const projects = this.getState().projects;
+    const entries = await Promise.all(projects.map(async (project): Promise<readonly [string, string] | undefined> => {
+      try {
+        const sessions = await this.api.sessions(project.path, machineId);
+        const latest = latestSessionModifiedAt(sessions);
+        return latest === undefined ? undefined : [project.id, latest] as const;
+      } catch {
+        return undefined;
+      }
+    }));
+    if (selectedMachineId(this.getState()) !== machineId) return;
+    const activity: Record<string, string> = {};
+    for (const entry of entries) if (entry !== undefined) activity[entry[0]] = entry[1];
+    this.setState({ projectActivity: activity });
   }
 
   async addProject(path: string, create?: boolean, trustChoice?: ProjectTrustChoice) {
@@ -102,4 +128,17 @@ export class ProjectController {
       if (selectedMachineId(this.getState()) === machineId) this.setState({ error: String(error) });
     }
   }
+}
+
+/** Unparseable timestamps are ignored rather than allowed to poison the max with NaN. */
+function latestSessionModifiedAt(sessions: readonly SessionInfo[]): string | undefined {
+  let latest: string | undefined;
+  let latestValue = Number.NEGATIVE_INFINITY;
+  for (const session of sessions) {
+    const value = Date.parse(session.modified);
+    if (Number.isNaN(value) || value <= latestValue) continue;
+    latestValue = value;
+    latest = session.modified;
+  }
+  return latest;
 }

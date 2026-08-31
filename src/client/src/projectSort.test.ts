@@ -46,6 +46,19 @@ describe("sortProjects", () => {
     expect(sortProjects(withBadDate, "recent").map((p) => p.name)).toEqual(["good", "broken"]);
   });
 
+  it("prefers a project's known last-conversation timestamp over its createdAt for recent", () => {
+    // "Alpha" was added first but has the most recent conversation of the three.
+    const activity = { Alpha: "2026-12-25T00:00:00.000Z" };
+
+    expect(sortProjects(projects, "recent", activity).map((p) => p.name)).toEqual(["Alpha", "bravo", "charlie"]);
+  });
+
+  it("falls back to createdAt for a project missing from the activity map", () => {
+    const activity = { bravo: "2020-01-01T00:00:00.000Z" };
+
+    expect(sortProjects(projects, "recent", activity).map((p) => p.name)).toEqual(["charlie", "Alpha", "bravo"]);
+  });
+
   it("never mutates the source array", () => {
     const source = [...projects];
     sortProjects(source, "name");

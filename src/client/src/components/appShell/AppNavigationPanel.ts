@@ -24,6 +24,8 @@ export class AppNavigationPanel extends LitElement {
   @property({ attribute: false }) machineStatuses: Record<string, MachineHealth> = {};
   @property({ attribute: false }) machineStatusSnapshots: Record<string, MachineStatusSnapshot> = {};
   @property({ attribute: false }) projects: Project[] = [];
+  /** Project id → last-conversation timestamp, fetched separately from `projects` itself. */
+  @property({ attribute: false }) projectActivity: Readonly<Record<string, string>> = {};
   @property({ attribute: false }) selectedProject?: Project;
   @property({ attribute: false }) workspaces: Workspace[] = [];
   @property({ attribute: false }) selectedWorkspace?: Workspace;
@@ -222,6 +224,7 @@ export class AppNavigationPanel extends LitElement {
       ` : null}
       <project-list
         .projects=${this.projects}
+        .activity=${this.liveProjectActivity()}
         .selected=${this.selectedProject}
         .statusSnapshot=${this.selectedMachineStatusSnapshot()}
         .collapsible=${this.collapsible}
@@ -293,6 +296,26 @@ export class AppNavigationPanel extends LitElement {
    */
   private selectedMachineStatusSnapshot(): MachineStatusSnapshot | undefined {
     return this.machineStatusSnapshots[selectedMachineId({ selectedMachine: this.selectedMachine })];
+  }
+
+  /**
+   * `projectActivity` is fetched separately and can lag behind live traffic, so
+   * the selected project's own entry is overridden with the freshest `modified`
+   * timestamp already sitting in `sessions` — otherwise sending a message in the
+   * open project would not move it to the top of a "recent" sort until the next
+   * background refresh.
+   */
+  private liveProjectActivity(): Readonly<Record<string, string>> {
+    const selectedId = this.selectedProject?.id;
+    if (selectedId === undefined) return this.projectActivity;
+    let latest: string | undefined;
+    for (const session of this.sessions) {
+      if (latest === undefined || Date.parse(session.modified) > Date.parse(latest)) latest = session.modified;
+    }
+    if (latest === undefined) return this.projectActivity;
+    const known = this.projectActivity[selectedId];
+    if (known !== undefined && Date.parse(known) >= Date.parse(latest)) return this.projectActivity;
+    return { ...this.projectActivity, [selectedId]: latest };
   }
 
   private async focusNavigableSection(section: KeyboardNavigableSection | undefined): Promise<boolean> {

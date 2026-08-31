@@ -8,11 +8,13 @@ import type { KeyboardNavigableSection } from "./navigationFocus";
 import { activateSelectableRow, focusSelectedOrFirstSelectableRow, handleSelectableRowKeyboard } from "./selectableRow";
 import { listStyles } from "./shared";
 import { PROJECT_COLORS, normalizeProjectColor, projectColorName, projectTintStyle } from "../projectColors";
-import { PROJECT_SORT_MODES, loadProjectSortMode, projectSortLabel, saveProjectSortMode, sortProjects, type ProjectSortMode } from "../projectSort";
+import { PROJECT_SORT_MODES, loadProjectSortMode, projectSortLabel, saveProjectSortMode, sortProjects, type ProjectActivity, type ProjectSortMode } from "../projectSort";
 
 @customElement("project-list")
 export class ProjectList extends LitElement implements KeyboardNavigableSection {
   @property({ attribute: false }) projects: Project[] = [];
+  /** Project id → last-conversation timestamp, backing the `recent` sort mode. */
+  @property({ attribute: false }) activity: ProjectActivity = {};
   @property({ attribute: false }) selected?: Project;
   /** Status tree of the machine these projects belong to; absent means no indicators. */
   @property({ attribute: false }) statusSnapshot: MachineStatusSnapshot | undefined;
@@ -63,7 +65,7 @@ export class ProjectList extends LitElement implements KeyboardNavigableSection 
 
   /** Projects in the order the user asked for; the source array is never mutated. */
   private get sortedProjects(): Project[] {
-    return sortProjects(this.projects, this.sortMode);
+    return sortProjects(this.projects, this.sortMode, this.activity);
   }
 
   async focusSelectedOrFirst(): Promise<boolean> {
