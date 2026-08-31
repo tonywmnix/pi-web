@@ -23,6 +23,8 @@ export interface SessionServiceDependencyInput {
   onPendingQuestionsChanged: NonNullable<PiSessionServiceDependencies["onPendingQuestionsChanged"]>;
   /** Read-only view of the background refresher; see the assembly below. */
   catalogRefreshStatus: NonNullable<PiSessionServiceDependencies["catalogRefreshStatus"]>;
+  /** Live global config reader for request-time workspace-effective defaults (e.g. the attachments save folder). */
+  config: NonNullable<PiSessionServiceDependencies["config"]>;
   /** Omitted when the operator has not enabled session spawning. */
   spawnTargets?: NonNullable<PiSessionServiceDependencies["spawnTargets"]>;
   /** The operator's subsessions preference, which also requires spawning. */
@@ -66,6 +68,7 @@ export function sessionServiceDependencies(input: SessionServiceDependencyInput)
     // Read-only, so session startup can tell a waiting user that provider
     // model lists are refreshing at the same time.
     catalogRefreshStatus: input.catalogRefreshStatus,
+    config: input.config,
     sessionManager: input.sessionManager,
   };
 }
